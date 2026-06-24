@@ -2,18 +2,18 @@
 
 CLI tool to fetch your **complete** YouTube watch history (videos, music, shorts).
 
-## 🚀 Features
+## Features
 
-✅ **Complete history** - Videos + Shorts + Music
-✅ **Automatic cookie extraction** from browser
-✅ **Automatic pagination** - Fetches entire history
-✅ **Search** by term
-✅ **Export** to JSON
+✅ **Complete history** - Videos + Shorts + Music \
+✅ **Automatic cookie extraction** from browser \
+✅ **Automatic pagination** - Fetches entire history \
+✅ **Search** by term \
+✅ **Export** to JSON \
 ✅ **Zero external dependencies** - Custom HTTP client
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### 1. Requirements
 
@@ -50,7 +50,7 @@ The API key is YouTube's public web client key. To obtain it:
 1. Open any video on [youtube.com](https://youtube.com) (make sure you're logged in)
 2. Right-click on the page → **View Page Source** (or press `Ctrl+U` / `Cmd+Option+U`)
 3. Search for: `INNERTUBE_API_KEY`
-4. Copy the key value (looks like `AIzaSy...`)
+4. Copy the key value
 
 **Edit `.env`** and paste the key:
 
@@ -58,7 +58,7 @@ The API key is YouTube's public web client key. To obtain it:
 YOUTUBE_API_KEY=your_api_key_here
 ```
 
-> **Note:** This is a public client identifier (same for all users). It identifies the client type, not individual users. User authentication is handled via browser cookies.
+> **Note:** This key identifies the client type, not individual users. User authentication is handled via browser cookies.
 
 ### 4. Configure Locale (Optional)
 
@@ -78,9 +78,9 @@ YOUTUBE_REGION=BR
 
 **Effect:**
 
-- ✅ Changes timestamp language only
-- ✅ Leaving empty defaults to English
-- ✅ Does not affect video data or history content
+- Changes timestamp language only
+- Leaving empty defaults to English
+- Does not affect video data or history content
 
 **Examples:**
 
@@ -90,14 +90,13 @@ YOUTUBE_REGION=BR
 | Portuguese (BR) | `pt-BR`          | `BR`           | "Hoje"        |
 | Spanish (Spain) | `es-ES`          | `ES`           | "Hoy"         |
 | German          | `de-DE`          | `DE`           | "Heute"       |
-| Japanese        | `ja-JP`          | `JP`           | "今日" (Kyō)  |
 | French          | `fr-FR`          | `FR`           | "Aujourd'hui" |
 
-**Note:** Leave both fields empty in `.env` to use the default (English).
+> **Note:** Leave both fields empty in `.env` to use the default (English).
 
 ---
 
-## 🍪 Authentication
+## Authentication
 
 Extract cookies from your browser (one-time setup):
 
@@ -124,7 +123,7 @@ Use with:
 
 ---
 
-## 📺 Usage
+## Usage
 
 ### List history
 
@@ -179,7 +178,7 @@ python yt_history.py search "cooking" --limit 0
 🔎 Searching 'cooking' in history...
    Analyzing... 50 items
 
-✅ 3 result(s) found
+✅ 1 result(s) found
 
 1. 🎬 Easy Pasta Recipe Tutorial
    📺 Cooking Channel
@@ -207,18 +206,22 @@ python yt_history.py export --output my_history.json --limit 0
 
 ```json
 {
-  "total_items": 4551,
+  "total_items": 50,
   "statistics": {
-    "video": 4549,
-    "short": 2
+    "short": 1,
+    "video": 49
   },
   "items": [
     {
       "video_id": "abc123def456",
       "title": "Sample Video Title",
       "channel_name": "Example Channel",
+      "channel_id": "UCD0u5Ubc8YQEXNuFsdqTAjQ",
+      "thumbnail_url": "https://i.ytimg.com/vi/abc123def456/frame0.jpg",
+      "duration": "01:00",
+      "view_count": "220K views",
       "watched_time": "Today",
-      "type": "video",
+      "type": "short",
       "url": "https://www.youtube.com/watch?v=abc123def456"
     }
   ]
@@ -241,7 +244,7 @@ python yt_history.py --help
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 yt-setup/
@@ -250,12 +253,12 @@ yt-setup/
 │   ├── history_parser.py      # Video/short parser
 │   └── history_fetcher.py     # Automatic pagination
 │
-├── .env                        # Configuration (API key)
+├── .env                       # Configuration (API key)
 ├── .env.example               # Configuration template
 ├── requirements.txt           # Python dependencies
 ├── extract_cookies.py         # Cookie extraction
-├── yt_history.py             # Main CLI
-└── browser_auth.json         # Saved cookies (generated)
+├── yt_history.py              # Main CLI
+└── browser_auth.json          # Saved cookies (generated)
 ```
 
 ### How it works
@@ -269,14 +272,14 @@ yt-setup/
 
 OAuth **doesn't work** with YouTube's history endpoints.
 
-We tested:
+I tested:
 
-- ✗ OAuth + browse endpoint → HTTP 400
-- ✅ Browser cookies → Works perfectly
+- OAuth + browse endpoint → HTTP 400
+- Browser cookies → Works perfectly
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "No items found"
 
@@ -322,7 +325,7 @@ cp .env.example .env
 
 ---
 
-## 📊 Extracted Data
+## Extracted Data
 
 For each video/short:
 
@@ -339,36 +342,22 @@ For each video/short:
 
 ---
 
-## 🔐 Security
+## Security
 
 ### Are cookies safe?
 
 ⚠️ **Cookies contain your complete Google session.**
 
-- ✅ OK for **personal/local** use
-- ❌ **DO NOT commit** `browser_auth.json` (already in `.gitignore`)
-- ❌ **DO NOT share** cookies with third parties
-
-### How to protect?
-
-```bash
-# Verify .gitignore
-cat .gitignore | grep browser_auth
-
-# Should return:
-# browser_auth.json
-```
+This is just for local use, DO NOT share cookies with third parties. \
+All data is presented, and immediatly discarded. \
+This project does not keep any of your data. \
+This project does not log anything to the internet.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Project created for personal use, but PRs are welcome!
-
-### Branch structure
-
-- `main` - Stable code
-- `feature/*` - New features
 
 ### How to contribute
 
@@ -380,20 +369,16 @@ Project created for personal use, but PRs are welcome!
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details
 
 ---
 
-## 🙏 Inspiration
+## Inspiration
 
 This project was inspired by:
 
 - [ytmusicapi](https://github.com/sigma67/ytmusicapi) - SAPISID authentication reference
 - [YouTube.js](https://github.com/LuanRT/YouTube.js) - Endpoint structure
 - [browser-cookie3](https://github.com/borisbabic/browser_cookie3) - Cookie extraction
-
----
-
-**Built to fetch complete YouTube watch history**

@@ -18,7 +18,6 @@ class HistoryItem:
         thumbnail_url: Optional[str] = None,
         duration: Optional[str] = None,
         view_count: Optional[str] = None,
-        published_time: Optional[str] = None,
         watched_time: Optional[str] = None,
         item_type: str = "video"
     ):
@@ -29,7 +28,6 @@ class HistoryItem:
         self.thumbnail_url = thumbnail_url
         self.duration = duration
         self.view_count = view_count
-        self.published_time = published_time
         self.watched_time = watched_time
         self.item_type = item_type
 
@@ -43,7 +41,6 @@ class HistoryItem:
             "thumbnail_url": self.thumbnail_url,
             "duration": self.duration,
             "view_count": self.view_count,
-            "published_time": self.published_time,
             "watched_time": self.watched_time,
             "type": self.item_type,
             "url": f"https://www.youtube.com/watch?v={self.video_id}"
@@ -219,12 +216,11 @@ class HistoryParser:
             title_data = metadata.get("title", {})
             title = title_data.get("content", "Untitled video")
 
-            # Additional metadata (channel, views, time)
+            # Additional metadata (channel, views)
             metadata_parts = metadata.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
 
             channel_name = None
             view_count = None
-            published_time = None
 
             # Parse metadata rows
             for row in metadata_parts:
@@ -319,9 +315,6 @@ class HistoryParser:
             # Views
             view_count = data.get("shortViewCountText", {}).get("simpleText")
 
-            # Published time
-            published_time = data.get("publishedTimeText", {}).get("simpleText")
-
             return HistoryItem(
                 video_id=video_id,
                 title=title,
@@ -330,7 +323,6 @@ class HistoryParser:
                 thumbnail_url=thumbnail_url,
                 duration=duration,
                 view_count=view_count,
-                published_time=published_time,
                 watched_time=watched_time,
                 item_type="video"
             )
