@@ -2,7 +2,7 @@
 History fetcher with pagination support.
 """
 
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict, Any
 import time
 
 from .youtube_client import YouTubeClient
@@ -87,3 +87,42 @@ class HistoryFetcher:
         next_continuation = self.client.get_continuation_token(response)
 
         return items, next_continuation
+
+    def fetch_all_grouped(
+        self,
+        limit: Optional[int] = None,
+        progress_callback: Optional[Callable[[int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        Fetch all history grouped by type.
+
+        Args:
+            limit: Maximum number of items (None = all)
+            progress_callback: Function called on each page (receives total items)
+
+        Returns:
+            Dict with structure:
+            {
+                "total_items": int,
+                "statistics": {"video": int, "short": int},
+                "videos": [HistoryItem],
+                "shorts": [HistoryItem]
+            }
+        """
+        all_items = self.fetch_all(limit=limit, progress_callback=progress_callback)
+
+        # Group by type
+        videos = [item for item in all_items if item.item_type == "video"]
+        shorts = [item for item in all_items if item.item_type == "short"]
+
+        # Statistics
+        stats = {}
+        for item in all_items:
+            stats[item.item_type] = stats.get(item.item_type, 0) + 1
+
+        return {
+            "total_items": len(all_items),
+            "statistics": stats,
+            "videos": videos,
+            "shorts": shorts
+        }

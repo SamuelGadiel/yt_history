@@ -12,6 +12,7 @@ Usage:
 import sys
 import json
 import argparse
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -37,44 +38,90 @@ def cmd_list(args):
         if not args.json:
             print(f"\r   Loading... {total} items", end="", flush=True)
 
-    # Fetch items
-    items = fetcher.fetch_all(limit=args.limit, progress_callback=progress)
+    # Fetch items grouped
+    limit = None if args.limit == 0 else args.limit
+    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
 
     if not args.json:
         print()  # New line after progress
 
-    if not items:
+    # Filter by type
+    videos = grouped["videos"]
+    shorts = grouped["shorts"]
+
+    if args.type == "videos":
+        shorts = []
+    elif args.type == "shorts":
+        videos = []
+
+    total_displayed = len(videos) + len(shorts)
+
+    if total_displayed == 0:
         if args.json:
-            print(json.dumps([], indent=2))
+            print(json.dumps({"total_items": 0, "statistics": {}, "videos": [], "shorts": []}, indent=2))
         else:
             print("❌ No items found in history.")
         return
 
     # JSON output
     if args.json:
-        items_data = [item.to_dict() for item in items]
-        print(json.dumps(items_data, indent=2, ensure_ascii=False))
+        output = {
+            "total_items": total_displayed,
+            "statistics": {},
+            "videos": [item.to_dict() for item in videos],
+            "shorts": [item.to_dict() for item in shorts]
+        }
+        # Recalculate statistics
+        if videos:
+            output["statistics"]["video"] = len(videos)
+        if shorts:
+            output["statistics"]["short"] = len(shorts)
+
+        print(json.dumps(output, indent=2, ensure_ascii=False))
         return
 
     # Human-readable output
-    print(f"\n✅ {len(items)} items found\n")
-    print("=" * 80)
+    print(f"\n✅ {total_displayed} items found", end="")
+    if args.type == "all":
+        print(f" ({len(shorts)} shorts, {len(videos)} videos)")
+    else:
+        print()
 
-    # Display items
-    for i, item in enumerate(items, 1):
-        type_emoji = "🎬" if item.item_type == "video" else "📱"
-
-        print(f"\n{i}. {type_emoji} {item.title}")
-
-        if item.channel_name:
-            print(f"   📺 {item.channel_name}")
-
-        if item.watched_time:
-            print(f"   🕐 {item.watched_time}")
-
-        print(f"   🔗 https://www.youtube.com/watch?v={item.video_id}")
+    # Always display grouped by type
+    _display_items_grouped(shorts, videos)
 
     print("\n" + "=" * 80)
+
+
+def _display_items_grouped(shorts, videos):
+    """Display items grouped by type."""
+    counter = 1
+
+    # Shorts section
+    if shorts:
+        print("\n📱 SHORTS")
+        print("─" * 80)
+        for item in shorts:
+            print(f"\n{counter}. 📱 {item.title}")
+            if item.watched_time:
+                print(f"   🕐 {item.watched_time}")
+            print(f"   🔗 https://www.youtube.com/watch?v={item.video_id}")
+            counter += 1
+
+    # Videos section
+    if videos:
+        print("\n🎬 VIDEOS")
+        print("─" * 80)
+        for item in videos:
+            print(f"\n{counter}. 🎬 {item.title}")
+            if item.channel_name:
+                print(f"   📺 {item.channel_name}")
+            if item.watched_time:
+                print(f"   🕐 {item.watched_time}")
+            print(f"   🔗 https://www.youtube.com/watch?v={item.video_id}")
+            counter += 1
+
+
 
 
 def cmd_export(args):
@@ -90,25 +137,39 @@ def cmd_export(args):
     def progress(total):
         print(f"\r   Fetching... {total} items", end="", flush=True)
 
-    # Fetch items (with limit, 0 = all)
+    # Fetch items grouped
     limit = None if args.limit == 0 else args.limit
-    items = fetcher.fetch_all(limit=limit, progress_callback=progress)
+    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
     print()  # New line
 
-    if not items:
+    if grouped["total_items"] == 0:
         print("❌ No items found.")
         return
 
-    # Statistics
+    # Filter by type if specified
+    videos = grouped["videos"]
+    shorts = grouped["shorts"]
+
+    if args.type == "videos":
+        shorts = []
+    elif args.type == "shorts":
+        videos = []
+
+    # Recalculate stats after filtering
     stats = {}
-    for item in items:
-        stats[item.item_type] = stats.get(item.item_type, 0) + 1
+    if videos:
+        stats["video"] = len(videos)
+    if shorts:
+        stats["short"] = len(shorts)
+
+    total_exported = len(videos) + len(shorts)
 
     # Prepare data
     export_data = {
-        "total_items": len(items),
+        "total_items": total_exported,
         "statistics": stats,
-        "items": [item.to_dict() for item in items]
+        "videos": [item.to_dict() for item in videos],
+        "shorts": [item.to_dict() for item in shorts]
     }
 
     # Save file
@@ -117,10 +178,11 @@ def cmd_export(args):
         json.dump(export_data, f, indent=2, ensure_ascii=False)
 
     print(f"\n✅ Exported: {output.absolute()}")
-    print(f"   Total: {len(items)} items")
-    print(f"   Statistics:")
-    for item_type, count in stats.items():
-        print(f"     - {item_type}: {count}")
+    print(f"   Total: {total_exported} items")
+    if stats:
+        print(f"   Statistics:")
+        for item_type, count in stats.items():
+            print(f"     - {item_type}: {count}")
 
 
 def cmd_search(args):
@@ -136,14 +198,25 @@ def cmd_search(args):
     def progress(total):
         print(f"\r   Analyzing... {total} items", end="", flush=True)
 
-    # Fetch items (with limit, 0 = all)
+    # Fetch items grouped
     limit = None if args.limit == 0 else args.limit
-    all_items = fetcher.fetch_all(limit=limit, progress_callback=progress)
+    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
     print()
 
-    if not all_items:
+    if grouped["total_items"] == 0:
         print("❌ History is empty.")
         return
+
+    # Get items based on type filter
+    videos = grouped["videos"]
+    shorts = grouped["shorts"]
+
+    if args.type == "videos":
+        all_items = videos
+    elif args.type == "shorts":
+        all_items = shorts
+    else:
+        all_items = videos + shorts
 
     # Filter by query (case-insensitive)
     query_lower = args.query.lower()
@@ -158,22 +231,18 @@ def cmd_search(args):
         print(f"   (Searched {len(all_items)} items)")
         return
 
-    print(f"\n✅ {len(matches)} result(s) found\n")
-    print("=" * 80)
+    # Separate matches by type
+    matched_videos = [item for item in matches if item.item_type == "video"]
+    matched_shorts = [item for item in matches if item.item_type == "short"]
 
-    # Display results
-    for i, item in enumerate(matches, 1):
-        type_emoji = "🎬" if item.item_type == "video" else "📱"
+    print(f"\n✅ {len(matches)} result(s) found", end="")
+    if args.type == "all" and matched_videos and matched_shorts:
+        print(f" ({len(matched_shorts)} shorts, {len(matched_videos)} videos)")
+    else:
+        print()
 
-        print(f"\n{i}. {type_emoji} {item.title}")
-
-        if item.channel_name:
-            print(f"   📺 {item.channel_name}")
-
-        if item.watched_time:
-            print(f"   🕐 {item.watched_time}")
-
-        print(f"   🔗 https://www.youtube.com/watch?v={item.video_id}")
+    # Always display grouped by type
+    _display_items_grouped(matched_shorts, matched_videos)
 
     print("\n" + "=" * 80)
 
@@ -197,30 +266,62 @@ def cmd_refresh_cookies(args):
         sys.exit(1)
 
 
+def setup_logging(verbose: bool = False):
+    """Configure logging based on verbosity level."""
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s [%(name)s]: %(message)s"
+    )
+
+
 def main():
+    # Extract --verbose from argv before argparse (to support any position)
+    argv = sys.argv[1:]
+    verbose = False
+    if "--verbose" in argv:
+        verbose = True
+        argv = [arg for arg in argv if arg != "--verbose"]
+    if "-v" in argv:
+        verbose = True
+        argv = [arg for arg in argv if arg != "-v"]
+
+    setup_logging(verbose=verbose)
+
+    # Parent parser for shared arguments (can be used in subcommands)
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument(
+        "--auth",
+        default="browser_auth.json",
+        metavar="FILE",
+        help="authentication file (default: browser_auth.json)"
+    )
+    parent_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="enable verbose logging (debug level)"
+    )
+
     parser = argparse.ArgumentParser(
         prog="yt_history",
         description="YouTube History CLI - Fetch complete YouTube watch history",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s list                          # List last 50 items
-  %(prog)s list --limit 200              # List last 200 items
-  %(prog)s search "cooking"              # Search in last 50 items
-  %(prog)s search "cooking" --limit 200  # Search in last 200 items
-  %(prog)s search "cooking" --limit 0    # Search in all history
-  %(prog)s export                        # Export last 50 items
-  %(prog)s export --limit 0              # Export all history
-  %(prog)s export --output my.json       # Export to custom file
-  %(prog)s refresh-cookies               # Refresh authentication cookies
+  %(prog)s list                                    # List last 50 items (grouped by type)
+  %(prog)s --verbose list --limit 200              # List last 200 items with debug
+  %(prog)s list --type shorts --verbose            # List only shorts with debug
+  %(prog)s search "cooking"                        # Search in last 50 items
+  %(prog)s search "cooking" --limit 0              # Search in all history
+  %(prog)s search "cooking" --type videos          # Search only in videos
+  %(prog)s search "music" --type shorts --limit 0  # Search shorts in all history
+  %(prog)s export                                  # Export last 50 items
+  %(prog)s export --limit 0                        # Export all history
+  %(prog)s export --type videos --limit 0          # Export only videos
+  %(prog)s export --output my.json                 # Export to custom file
+  %(prog)s refresh-cookies                         # Refresh authentication cookies
         """
-    )
-
-    parser.add_argument(
-        "--auth",
-        default="browser_auth.json",
-        metavar="FILE",
-        help="authentication file (default: browser_auth.json)"
     )
 
     subparsers = parser.add_subparsers(
@@ -234,26 +335,34 @@ Examples:
     list_parser = subparsers.add_parser(
         "list",
         help="list history items",
-        description="Display YouTube watch history with videos and shorts."
+        description="Display YouTube watch history with videos and shorts.",
+        parents=[parent_parser]
     )
     list_parser.add_argument(
         "--limit",
         type=int,
         default=50,
         metavar="N",
-        help="maximum number of items to fetch (default: 50)"
+        help="maximum number of items to fetch (default: 50, use 0 for all)"
     )
     list_parser.add_argument(
         "--json",
         action="store_true",
         help="output as JSON instead of human-readable format"
     )
+    list_parser.add_argument(
+        "--type",
+        choices=["all", "videos", "shorts"],
+        default="all",
+        help="filter by item type (default: all)"
+    )
 
     # Command: export
     export_parser = subparsers.add_parser(
         "export",
         help="export history to JSON",
-        description="Export YouTube watch history to a JSON file."
+        description="Export YouTube watch history to a JSON file.",
+        parents=[parent_parser]
     )
     export_parser.add_argument(
         "--output",
@@ -268,12 +377,19 @@ Examples:
         metavar="N",
         help="maximum number of items to export (default: 50, use 0 for all)"
     )
+    export_parser.add_argument(
+        "--type",
+        choices=["all", "videos", "shorts"],
+        default="all",
+        help="filter by item type (default: all)"
+    )
 
     # Command: search
     search_parser = subparsers.add_parser(
         "search",
         help="search in history",
-        description="Search for videos/channels in your watch history."
+        description="Search for videos/channels in your watch history.",
+        parents=[parent_parser]
     )
     search_parser.add_argument(
         "query",
@@ -287,15 +403,22 @@ Examples:
         metavar="N",
         help="search in last N items (default: 50, use 0 for all history)"
     )
+    search_parser.add_argument(
+        "--type",
+        choices=["all", "videos", "shorts"],
+        default="all",
+        help="filter by item type (default: all)"
+    )
 
     # Command: refresh-cookies
     refresh_parser = subparsers.add_parser(
         "refresh-cookies",
         help="refresh browser cookies",
-        description="Extract fresh cookies from browser for authentication."
+        description="Extract fresh cookies from browser for authentication.",
+        parents=[parent_parser]
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.command:
         parser.print_help()
