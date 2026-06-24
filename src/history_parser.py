@@ -4,6 +4,9 @@ Parser for YouTube watch history.
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryItem:
@@ -75,6 +78,7 @@ class HistoryParser:
                 contents = response["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]
                 sections = contents["sectionListRenderer"]["contents"]
             except (KeyError, IndexError) as e:
+                logger.error(f"Invalid response structure (first page): {e}", exc_info=True)
                 raise ValueError(f"Invalid response structure (first page): {e}")
 
         # Continuation pages
@@ -86,6 +90,7 @@ class HistoryParser:
                         sections = action["appendContinuationItemsAction"]["continuationItems"]
                         break
             except (KeyError, IndexError) as e:
+                logger.error(f"Invalid response structure (continuation): {e}", exc_info=True)
                 raise ValueError(f"Invalid response structure (continuation): {e}")
 
         else:
@@ -103,9 +108,8 @@ class HistoryParser:
 
                 # Parse each item
                 for item_data in section_items:
-                    parsed = HistoryParser._parse_item(item_data, watched_time)
-                    if parsed:
-                        items.append(parsed)
+                    parsed_items = HistoryParser._parse_item(item_data, watched_time)
+                    items.extend(parsed_items)
 
         return items
 
@@ -126,7 +130,7 @@ class HistoryParser:
         return None
 
     @staticmethod
-    def _parse_item(item_data: Dict[str, Any], watched_time: Optional[str] = None) -> Optional[HistoryItem]:
+    def _parse_item(item_data: Dict[str, Any], watched_time: Optional[str] = None) -> List[HistoryItem]:
         """
         Parse single history item.
 
@@ -135,75 +139,87 @@ class HistoryParser:
             watched_time: Section timestamp (when watched)
 
         Returns:
-            HistoryItem or None if cannot parse
+            List of HistoryItem (usually 1, but reelShelfRenderer returns multiple)
         """
         # Identify renderer type
         renderer_type = list(item_data.keys())[0] if item_data else None
 
         if not renderer_type:
-            return None
+            return []
 
-        # Shorts (reelShelfRenderer)
+        # Shorts (reelShelfRenderer) - returns multiple items
         if renderer_type == "reelShelfRenderer":
             return HistoryParser._parse_reel_shelf(item_data[renderer_type], watched_time)
 
         # Regular videos (lockupViewModel)
         elif renderer_type == "lockupViewModel":
-            return HistoryParser._parse_lockup_view_model(item_data[renderer_type], watched_time)
+            parsed = HistoryParser._parse_lockup_view_model(item_data[renderer_type], watched_time)
+            return [parsed] if parsed else []
 
         # Old videos may use videoRenderer
         elif renderer_type == "videoRenderer":
-            return HistoryParser._parse_video_renderer(item_data[renderer_type], watched_time)
+            parsed = HistoryParser._parse_video_renderer(item_data[renderer_type], watched_time)
+            return [parsed] if parsed else []
 
         # Unsupported type
-        return None
+        return []
 
     @staticmethod
-    def _parse_reel_shelf(data: Dict[str, Any], watched_time: Optional[str]) -> Optional[HistoryItem]:
-        """Parse shorts (reelShelfRenderer)."""
+    def _parse_reel_shelf(data: Dict[str, Any], watched_time: Optional[str]) -> List[HistoryItem]:
+        """Parse shorts (reelShelfRenderer) - returns all shorts in shelf."""
+        parsed_shorts: List[HistoryItem] = []
+
         try:
             # reelShelfRenderer contains multiple shorts
-            items = data.get("items", [])
+            reel_items = data.get("items", [])
 
-            if not items:
-                return None
+            if not reel_items:
+                return []
 
-            # For now, return only first short
-            # TODO: Expand to return all
-            first_reel = items[0]
+            # Parse all shorts
+            for reel_item in reel_items:
+                if "shortsLockupViewModel" not in reel_item:
+                    continue
 
-            if "shortsLockupViewModel" in first_reel:
-                short_data = first_reel["shortsLockupViewModel"]
+                try:
+                    short_data = reel_item["shortsLockupViewModel"]
 
-                # Get video ID from reelWatchEndpoint (correct location)
-                on_tap = short_data.get("onTap", {})
-                innertube_cmd = on_tap.get("innertubeCommand", {})
-                reel_endpoint = innertube_cmd.get("reelWatchEndpoint", {})
-                video_id = reel_endpoint.get("videoId", "")
+                    # Get video ID from reelWatchEndpoint
+                    on_tap = short_data.get("onTap", {})
+                    innertube_cmd = on_tap.get("innertubeCommand", {})
+                    reel_endpoint = innertube_cmd.get("reelWatchEndpoint", {})
+                    video_id = reel_endpoint.get("videoId", "")
 
-                # Title and view count from overlayMetadata
-                overlay = short_data.get("overlayMetadata", {})
-                title = overlay.get("primaryText", {}).get("content", "Untitled short")
-                view_count = overlay.get("secondaryText", {}).get("content")
+                    if not video_id:
+                        continue
 
-                # Thumbnail from reelWatchEndpoint
-                thumbnail_data = reel_endpoint.get("thumbnail", {})
-                thumbnails = thumbnail_data.get("thumbnails", [])
-                thumbnail_url = thumbnails[0].get("url") if thumbnails else None
+                    # Title and view count from overlayMetadata
+                    overlay = short_data.get("overlayMetadata", {})
+                    title = overlay.get("primaryText", {}).get("content", "Untitled short")
+                    view_count = overlay.get("secondaryText", {}).get("content")
 
-                return HistoryItem(
-                    video_id=video_id,
-                    title=title,
-                    thumbnail_url=thumbnail_url,
-                    view_count=view_count,
-                    watched_time=watched_time,
-                    item_type="short"
-                )
+                    # Thumbnail from reelWatchEndpoint
+                    thumbnail_data = reel_endpoint.get("thumbnail", {})
+                    thumbnails = thumbnail_data.get("thumbnails", [])
+                    thumbnail_url = thumbnails[0].get("url") if thumbnails else None
 
-        except (KeyError, IndexError):
-            pass
+                    parsed_shorts.append(HistoryItem(
+                        video_id=video_id,
+                        title=title,
+                        thumbnail_url=thumbnail_url,
+                        view_count=view_count,
+                        watched_time=watched_time,
+                        item_type="short"
+                    ))
 
-        return None
+                except (KeyError, IndexError, AttributeError, TypeError) as e:
+                    logger.debug(f"Failed to parse short item: {e}", exc_info=True)
+                    continue
+
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            logger.debug(f"Failed to parse reelShelfRenderer: {e}", exc_info=True)
+
+        return parsed_shorts
 
     @staticmethod
     def _parse_lockup_view_model(data: Dict[str, Any], watched_time: Optional[str]) -> Optional[HistoryItem]:
@@ -216,7 +232,18 @@ class HistoryParser:
             title_data = metadata.get("title", {})
             title = title_data.get("content", "Untitled video")
 
-            # Additional metadata (channel, views)
+            # Channel ID from decoratedAvatarViewModel
+            channel_id = None
+            image_data_meta = metadata.get("image", {})
+            decorated_avatar = image_data_meta.get("decoratedAvatarViewModel", {})
+            renderer_context = decorated_avatar.get("rendererContext", {})
+            command_context = renderer_context.get("commandContext", {})
+            on_tap = command_context.get("onTap", {})
+            innertube_cmd = on_tap.get("innertubeCommand", {})
+            browse_endpoint = innertube_cmd.get("browseEndpoint", {})
+            channel_id = browse_endpoint.get("browseId")
+
+            # Additional metadata (channel name, views)
             metadata_parts = metadata.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
 
             channel_name = None
@@ -266,6 +293,7 @@ class HistoryParser:
                 video_id=video_id,
                 title=title,
                 channel_name=channel_name,
+                channel_id=channel_id,
                 view_count=view_count,
                 duration=duration,
                 thumbnail_url=thumbnail,
@@ -273,10 +301,9 @@ class HistoryParser:
                 item_type="video"
             )
 
-        except (KeyError, IndexError) as e:
-            # Debug: log error but don't fail
-            # print(f"Warning: Failed to parse lockupViewModel: {e}")
-            pass
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            logger.debug(f"Failed to parse lockupViewModel: {e}", exc_info=True)
+            return None
 
         return None
 
@@ -327,7 +354,7 @@ class HistoryParser:
                 item_type="video"
             )
 
-        except (KeyError, IndexError):
-            pass
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            logger.debug(f"Failed to parse videoRenderer: {e}", exc_info=True)
 
         return None
