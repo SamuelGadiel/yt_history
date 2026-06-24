@@ -349,7 +349,7 @@ For each video/short:
 ⚠️ **Cookies contain your complete Google session.**
 
 This is just for local use, DO NOT share cookies with third parties. \
-All data is presented, and immediatly discarded. \
+All data presented is immediately discarded. \
 This project does not keep any of your data. \
 This project does not log anything to the internet.
 
