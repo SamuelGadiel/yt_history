@@ -14,52 +14,36 @@ import json
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import NoReturn
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.youtube_client import YouTubeClient, load_cookies_from_file
+from src.youtube_client import YouTubeClient
 from src.history_fetcher import HistoryFetcher
+from src.history_parser import HistoryItem
+from src.auth import load_cookies
+from src.models import HistoryGroup
+from src.history_filter import filter_by_type, separate_by_type, search_items
+from src.progress import ProgressReporter
+from src.exceptions import YouTubeHistoryError, AuthenticationError
 
 
-def load_cookies(args):
-    """Load cookies from file or live extraction based on args.
-
-    Args:
-        args: Parsed command-line arguments with 'live_cookies' and 'auth' attributes
-
-    Returns:
-        dict: Cookie dictionary
-    """
-    if args.live_cookies:
-        from extract_cookies import get_live_cookies
-        # Only show verbose output if --verbose flag is set
-        verbose = getattr(args, 'verbose', False) and not getattr(args, 'json', False)
-        return get_live_cookies(verbose=verbose)
-    else:
-        return load_cookies_from_file(args.auth)
-
-
-def cmd_list(args):
+def cmd_list(args: argparse.Namespace) -> None:
     """Command: list - Display history items."""
     verbose = getattr(args, 'verbose', False)
 
     if not args.json and verbose:
         print("🔍 Fetching YouTube history...")
 
-    # Load cookies
+    # Load cookies and fetch
     cookies = load_cookies(args)
     client = YouTubeClient(cookies)
     fetcher = HistoryFetcher(client)
 
     # Progress callback
     limit = None if args.limit == 0 else args.limit
-
-    def progress(total):
-        if not args.json and verbose:
-            max_display = limit if limit else total
-            print(f"\r   Loading... {min(total, max_display)} items", end="", flush=True)
+    progress = ProgressReporter.create_loading_callback(verbose, args.json, limit)
 
     # Fetch items grouped
     grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
@@ -68,54 +52,165 @@ def cmd_list(args):
         print()  # New line after progress
 
     # Filter by type
-    videos = grouped["videos"]
-    shorts = grouped["shorts"]
+    filtered = filter_by_type(grouped, args.type)
 
-    if args.type == "videos":
-        shorts = []
-    elif args.type == "shorts":
-        videos = []
-
-    total_displayed = len(videos) + len(shorts)
-
-    if total_displayed == 0:
+    if filtered.total_items == 0:
         if args.json:
-            print(json.dumps({"total_items": 0, "statistics": {}, "videos": [], "shorts": []}, indent=2))
+            print(json.dumps(filtered.to_dict(), indent=2))
         else:
             print("❌ No items found in history.")
         return
 
     # JSON output
     if args.json:
-        output = {
-            "total_items": total_displayed,
-            "statistics": {},
-            "videos": [item.to_dict() for item in videos],
-            "shorts": [item.to_dict() for item in shorts]
-        }
-        # Recalculate statistics
-        if videos:
-            output["statistics"]["video"] = len(videos)
-        if shorts:
-            output["statistics"]["short"] = len(shorts)
-
-        print(json.dumps(output, indent=2, ensure_ascii=False))
+        print(json.dumps(filtered.to_dict(), indent=2, ensure_ascii=False))
         return
 
     # Human-readable output
-    print(f"\n✅ {total_displayed} items found", end="")
-    if args.type == "all":
-        print(f" ({len(shorts)} shorts, {len(videos)} videos)")
-    else:
+    _print_summary(filtered, args.type)
+    _display_items_grouped(filtered.shorts, filtered.videos)
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    """Command: export - Export history to file."""
+    verbose = getattr(args, 'verbose', False)
+
+    if verbose:
+        print("📦 Exporting YouTube history...")
+
+    # Load cookies and fetch
+    cookies = load_cookies(args)
+    client = YouTubeClient(cookies)
+    fetcher = HistoryFetcher(client)
+
+    # Progress callback
+    limit = None if args.limit == 0 else args.limit
+    progress = ProgressReporter.create_fetching_callback(verbose, limit)
+
+    # Fetch items grouped
+    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
+
+    if verbose:
+        print()  # New line
+
+    if grouped.total_items == 0:
+        print("❌ History is empty.")
+        return
+
+    # Filter by type
+    filtered = filter_by_type(grouped, args.type)
+
+    # Save file
+    output = Path(args.output)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(filtered.to_dict(), f, indent=2, ensure_ascii=False)
+
+    print(f"\n✅ Exported: {output.absolute()}")
+    print(f"   Total: {filtered.total_items} items")
+
+    if filtered.statistics:
+        print("   Statistics:")
+        for item_type, count in filtered.statistics.items():
+            print(f"     - {item_type}: {count}")
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    """Command: search - Search term in history."""
+    verbose = getattr(args, 'verbose', False)
+
+    if verbose:
+        print(f"🔎 Searching '{args.query}' in history...")
+
+    # Load cookies and fetch
+    cookies = load_cookies(args)
+    client = YouTubeClient(cookies)
+    fetcher = HistoryFetcher(client)
+
+    # Progress callback
+    limit = None if args.limit == 0 else args.limit
+    progress = ProgressReporter.create_analyzing_callback(verbose, limit)
+
+    # Fetch items grouped
+    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
+
+    if verbose:
         print()
 
-    # Always display grouped by type
-    _display_items_grouped(shorts, videos)
+    if grouped.total_items == 0:
+        print("❌ History is empty.")
+        return
+
+    # Filter by type first
+    filtered = filter_by_type(grouped, args.type)
+    all_items = filtered.all_items()
+
+    # Search in filtered items
+    matches = search_items(all_items, args.query)
+
+    if not matches:
+        print(f"\n❌ No results for '{args.query}'")
+        print(f"   (Searched {len(all_items)} items)")
+        return
+
+    # Separate matches by type
+    matched_videos, matched_shorts = separate_by_type(matches)
+
+    # Print summary
+    total_matches = len(matches)
+    if args.type == "all" and matched_videos and matched_shorts:
+        print(f"\n✅ {total_matches} result(s) found ({len(matched_shorts)} shorts, {len(matched_videos)} videos)")
+    else:
+        print(f"\n✅ {total_matches} result(s) found")
+
+    # Display results
+    _display_items_grouped(matched_shorts, matched_videos)
+    print("\n" + "=" * 80)
 
 
-def _display_items_grouped(shorts, videos):
-    """Display items grouped by type."""
-    counter = 1
+def cmd_refresh_cookies(args: argparse.Namespace) -> None:
+    """Command: refresh-cookies - Extract fresh cookies from browser."""
+    import subprocess
+
+    print("🍪 Extracting cookies from browser...")
+
+    result = subprocess.run(
+        [sys.executable, "extract_cookies.py"],
+        capture_output=False
+    )
+
+    if result.returncode == 0:
+        print("\n✅ Cookies refreshed!")
+    else:
+        print("\n❌ Failed to extract cookies")
+        sys.exit(1)
+
+
+def _print_summary(grouped: HistoryGroup, type_filter: str) -> None:
+    """Print summary of found items."""
+    total = grouped.total_items
+    videos_count = len(grouped.videos)
+    shorts_count = len(grouped.shorts)
+
+    if type_filter == "all":
+        print(f"✅ {total} items found ({shorts_count} shorts, {videos_count} videos)")
+    else:
+        print(f"✅ {total} items found")
+
+
+def _display_items_grouped(
+    shorts: list[HistoryItem],
+    videos: list[HistoryItem],
+    start_index: int = 1
+) -> None:
+    """
+    Display items grouped by type.
+
+    Args:
+        shorts: List of short items
+        videos: List of video items
+        start_index: Starting number for display (default: 1)
+    """
+    counter = start_index
 
     # Shorts section
     if shorts:
@@ -142,168 +237,13 @@ def _display_items_grouped(shorts, videos):
             counter += 1
 
 
+def setup_logging(verbose: bool = False) -> None:
+    """
+    Configure logging based on verbosity level.
 
-
-def cmd_export(args):
-    """Command: export - Export history to file."""
-    verbose = getattr(args, 'verbose', False)
-
-    if verbose:
-        print("📦 Exporting YouTube history...")
-
-    # Load cookies
-    cookies = load_cookies(args)
-    client = YouTubeClient(cookies)
-    fetcher = HistoryFetcher(client)
-
-    # Progress callback
-    limit = None if args.limit == 0 else args.limit
-
-    def progress(total):
-        if verbose:
-            max_display = limit if limit else total
-            print(f"\r   Fetching... {min(total, max_display)} items", end="", flush=True)
-
-    # Fetch items grouped
-    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
-
-    if verbose:
-        print()  # New line
-
-    if grouped["total_items"] == 0:
-        print("❌ No items found.")
-        return
-
-    # Filter by type if specified
-    videos = grouped["videos"]
-    shorts = grouped["shorts"]
-
-    if args.type == "videos":
-        shorts = []
-    elif args.type == "shorts":
-        videos = []
-
-    # Recalculate stats after filtering
-    stats = {}
-    if videos:
-        stats["video"] = len(videos)
-    if shorts:
-        stats["short"] = len(shorts)
-
-    total_exported = len(videos) + len(shorts)
-
-    # Prepare data
-    export_data = {
-        "total_items": total_exported,
-        "statistics": stats,
-        "videos": [item.to_dict() for item in videos],
-        "shorts": [item.to_dict() for item in shorts]
-    }
-
-    # Save file
-    output = Path(args.output)
-    with open(output, "w", encoding="utf-8") as f:
-        json.dump(export_data, f, indent=2, ensure_ascii=False)
-
-    print(f"\n✅ Exported: {output.absolute()}")
-    print(f"   Total: {total_exported} items")
-    if stats:
-        print(f"   Statistics:")
-        for item_type, count in stats.items():
-            print(f"     - {item_type}: {count}")
-
-
-def cmd_search(args):
-    """Command: search - Search term in history."""
-    verbose = getattr(args, 'verbose', False)
-
-    if verbose:
-        print(f"🔎 Searching '{args.query}' in history...")
-
-    # Load cookies
-    cookies = load_cookies(args)
-    client = YouTubeClient(cookies)
-    fetcher = HistoryFetcher(client)
-
-    # Progress callback
-    limit = None if args.limit == 0 else args.limit
-
-    def progress(total):
-        if verbose:
-            max_display = limit if limit else total
-            print(f"\r   Analyzing... {min(total, max_display)} items", end="", flush=True)
-
-    # Fetch items grouped
-    grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
-
-    if verbose:
-        print()
-
-    if grouped["total_items"] == 0:
-        print("❌ History is empty.")
-        return
-
-    # Get items based on type filter
-    videos = grouped["videos"]
-    shorts = grouped["shorts"]
-
-    if args.type == "videos":
-        all_items = videos
-    elif args.type == "shorts":
-        all_items = shorts
-    else:
-        all_items = videos + shorts
-
-    # Filter by query (case-insensitive)
-    query_lower = args.query.lower()
-    matches = [
-        item for item in all_items
-        if query_lower in item.title.lower() or
-           (item.channel_name and query_lower in item.channel_name.lower())
-    ]
-
-    if not matches:
-        print(f"\n❌ No results for '{args.query}'")
-        print(f"   (Searched {len(all_items)} items)")
-        return
-
-    # Separate matches by type
-    matched_videos = [item for item in matches if item.item_type == "video"]
-    matched_shorts = [item for item in matches if item.item_type == "short"]
-
-    print(f"\n✅ {len(matches)} result(s) found", end="")
-    if args.type == "all" and matched_videos and matched_shorts:
-        print(f" ({len(matched_shorts)} shorts, {len(matched_videos)} videos)")
-    else:
-        print()
-
-    # Always display grouped by type
-    _display_items_grouped(matched_shorts, matched_videos)
-
-    print("\n" + "=" * 80)
-
-
-def cmd_refresh_cookies(args):
-    """Command: refresh-cookies - Extract fresh cookies from browser."""
-    print("🍪 Extracting cookies from browser...")
-
-    # Import extract_cookies script
-    import subprocess
-
-    result = subprocess.run(
-        [sys.executable, "extract_cookies.py"],
-        capture_output=False
-    )
-
-    if result.returncode == 0:
-        print("\n✅ Cookies refreshed!")
-    else:
-        print("\n❌ Failed to extract cookies")
-        sys.exit(1)
-
-
-def setup_logging(verbose: bool = False):
-    """Configure logging based on verbosity level."""
+    Args:
+        verbose: Enable debug-level logging if True
+    """
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
@@ -311,20 +251,14 @@ def setup_logging(verbose: bool = False):
     )
 
 
-def main():
-    # Extract --verbose from argv before argparse (to support any position)
-    argv = sys.argv[1:]
-    verbose = False
-    if "--verbose" in argv:
-        verbose = True
-        argv = [arg for arg in argv if arg != "--verbose"]
-    if "-v" in argv:
-        verbose = True
-        argv = [arg for arg in argv if arg != "-v"]
+def create_parser() -> argparse.ArgumentParser:
+    """
+    Create argument parser with all commands and options.
 
-    setup_logging(verbose=verbose)
-
-    # Parent parser for shared arguments (can be used in subcommands)
+    Returns:
+        Configured ArgumentParser instance
+    """
+    # Parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument(
         "--auth",
@@ -461,23 +395,49 @@ Examples:
         parents=[parent_parser]
     )
 
-    args = parser.parse_args(argv)
+    return parser
 
+
+def check_auth_file(args: argparse.Namespace) -> None:
+    """
+    Check if authentication file exists.
+
+    Args:
+        args: Parsed arguments
+
+    Raises:
+        SystemExit: If auth file not found (unless using live cookies or refresh command)
+    """
+    if args.command == "refresh-cookies" or args.live_cookies:
+        return
+
+    if not Path(args.auth).exists():
+        print(f"❌ Authentication file not found: {args.auth}")
+        print("\nRun first:")
+        print("  python extract_cookies.py")
+        print("\nOr:")
+        print("  python yt_history.py refresh-cookies")
+        print("\nOr use live mode:")
+        print("  python yt_history.py list --live-cookies")
+        sys.exit(1)
+
+
+def main() -> NoReturn:
+    """Main entry point."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    # Setup logging
+    verbose = getattr(args, 'verbose', False)
+    setup_logging(verbose=verbose)
+
+    # Check command
     if not args.command:
         parser.print_help()
         sys.exit(1)
 
-    # Check if auth file exists (except for refresh-cookies and --live-cookies)
-    if args.command != "refresh-cookies" and not args.live_cookies:
-        if not Path(args.auth).exists():
-            print(f"❌ Authentication file not found: {args.auth}")
-            print("\nRun first:")
-            print("  python extract_cookies.py")
-            print("\nOr:")
-            print("  python yt_history.py refresh-cookies")
-            print("\nOr use live mode:")
-            print("  python yt_history.py list --live-cookies")
-            sys.exit(1)
+    # Check auth file
+    check_auth_file(args)
 
     # Execute command
     try:
@@ -490,13 +450,27 @@ Examples:
         elif args.command == "refresh-cookies":
             cmd_refresh_cookies(args)
 
+        sys.exit(0)
+
     except KeyboardInterrupt:
         print("\n\n⚠️  Cancelled by user")
         sys.exit(130)
+
+    except AuthenticationError as e:
+        print(f"\n❌ Error: {e}")
+        print("\nRun first:")
+        print("  python extract_cookies.py")
+        sys.exit(1)
+
+    except YouTubeHistoryError as e:
+        print(f"\n❌ Error: {e}")
+        sys.exit(1)
+
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if verbose:
+            import traceback
+            traceback.print_exc()
         sys.exit(1)
 
 
