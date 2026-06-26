@@ -2,14 +2,14 @@
 HTTP client for YouTube API (watch history).
 """
 
-import json
 import time
 import hashlib
-import os
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 import requests
+
+from .config import AppConfig, load_env_config
+from .exceptions import APIError, AuthenticationError
 
 
 class YouTubeClient:
@@ -18,64 +18,28 @@ class YouTubeClient:
     BASE_URL = "https://www.youtube.com/youtubei/v1/"
     USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    @staticmethod
-    def _load_env_config() -> Dict[str, str]:
-        """Load configuration from .env file"""
-        env_path = Path(__file__).parent.parent / '.env'
-
-        if not env_path.exists():
-            raise FileNotFoundError(
-                f".env not found at {env_path}\n"
-                f"Copy .env.example to .env and configure YOUTUBE_API_KEY"
-            )
-
-        config = {
-            'api_key': None,
-            'language': None,  # Default: None (YouTube assumes English)
-            'region': None     # Default: None (YouTube assumes US)
-        }
-
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith('#') or not line:
-                    continue
-
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
-
-                    if key == 'YOUTUBE_API_KEY' and value and value != 'your_api_key_here':
-                        config['api_key'] = value
-                    elif key == 'YOUTUBE_LANGUAGE' and value:
-                        config['language'] = value
-                    elif key == 'YOUTUBE_REGION' and value:
-                        config['region'] = value
-
-        if not config['api_key']:
-            raise ValueError(
-                "YOUTUBE_API_KEY not configured in .env\n"
-                "Set it to a valid YouTube API key (see README for instructions)"
-            )
-
-        return config
-
-    def __init__(self, cookies: Dict[str, str]):
+    def __init__(self, cookies: Dict[str, str], config: Optional[AppConfig] = None):
         """
         Initialize YouTube client.
 
         Args:
             cookies: Dict with YouTube cookies (extracted from browser)
+            config: Optional AppConfig instance (loads from .env if None)
+
+        Raises:
+            AuthenticationError: If required cookies are missing
+            ConfigError: If configuration is invalid
         """
         self.cookies = cookies
         self.session = requests.Session()
 
-        # Load config from .env
-        config = self._load_env_config()
-        self.api_key = config['api_key']
-        language = config['language']
-        region = config['region']
+        # Load config if not provided
+        if config is None:
+            config = load_env_config()
+
+        self.api_key = config.api_key
+        language = config.language
+        region = config.region
 
         self.session.headers.update(self._get_base_headers(language))
 
@@ -97,12 +61,25 @@ class YouTubeClient:
             self.context["client"]["gl"] = region
 
     def _get_base_headers(self, language: Optional[str]) -> Dict[str, str]:
-        """Return HTTP headers for authentication."""
+        """
+        Build HTTP headers for authentication.
+
+        Args:
+            language: Optional language code (e.g., "en-US", "pt-BR")
+
+        Returns:
+            Dict of HTTP headers
+
+        Raises:
+            AuthenticationError: If SAPISID cookie not found
+        """
         cookie_string = '; '.join([f"{k}={v}" for k, v in self.cookies.items()])
         sapisid = self.cookies.get('SAPISID') or self.cookies.get('__Secure-3PAPISID')
 
         if not sapisid:
-            raise ValueError("SAPISID cookie not found. Please log in to YouTube in your browser.")
+            raise AuthenticationError(
+                "SAPISID cookie not found. Please log in to YouTube in your browser."
+            )
 
         timestamp = str(int(time.time()))
         origin = "https://www.youtube.com"
@@ -135,28 +112,34 @@ class YouTubeClient:
         Send HTTP request to YouTube API.
 
         Args:
-            endpoint: Endpoint name
+            endpoint: Endpoint name (e.g., "browse")
             body: JSON payload (optional)
 
         Returns:
             JSON response
 
         Raises:
-            requests.HTTPError: If request fails
+            APIError: If request fails or returns non-200 status
         """
         url = f"{self.BASE_URL}{endpoint}?key={self.api_key}&prettyPrint=false"
 
         payload = body or {}
         payload["context"] = self.context
 
-        response = self.session.post(url, json=payload)
+        try:
+            response = self.session.post(url, json=payload)
+        except requests.RequestException as e:
+            raise APIError(f"Network error: {e}")
 
         if response.status_code != 200:
-            raise requests.HTTPError(
+            raise APIError(
                 f"YouTube API returned {response.status_code}: {response.text[:200]}"
             )
 
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as e:
+            raise APIError(f"Invalid JSON response: {e}")
 
     def get_history(self, continuation: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -169,7 +152,7 @@ class YouTubeClient:
             JSON response with history
 
         Raises:
-            requests.HTTPError: If request fails
+            APIError: If request fails
         """
         body = {"continuation": continuation} if continuation else {"browseId": "FEhistory"}
         return self._send_request("browse", body)
@@ -211,38 +194,30 @@ class YouTubeClient:
         return None
 
     def get_library(self) -> Dict[str, Any]:
-        """Fetch YouTube library."""
+        """
+        Fetch YouTube library.
+
+        Returns:
+            JSON response with library data
+
+        Raises:
+            APIError: If request fails
+        """
         body = {"browseId": "FElibrary"}
         return self._send_request("browse", body)
 
     def get_subscriptions(self) -> Dict[str, Any]:
-        """Fetch YouTube subscriptions."""
+        """
+        Fetch YouTube subscriptions.
+
+        Returns:
+            JSON response with subscriptions
+
+        Raises:
+            APIError: If request fails
+        """
         body = {"browseId": "FEsubscriptions"}
         return self._send_request("browse", body)
 
 
-def load_cookies_from_file(filepath: str) -> Dict[str, str]:
-    """
-    Load cookies saved from browser.
-
-    Args:
-        filepath: Path to browser_auth.json
-
-    Returns:
-        Dict with cookies
-    """
-    with open(filepath, 'r') as f:
-        data = json.load(f)
-
-    cookie_string = data.get('cookie', '')
-
-    if not cookie_string:
-        raise ValueError(f"'cookie' field not found in {filepath}")
-
-    cookies = {}
-    for item in cookie_string.split('; '):
-        if '=' in item:
-            key, value = item.split('=', 1)
-            cookies[key] = value
-
-    return cookies
+__all__ = ['YouTubeClient']
