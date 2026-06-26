@@ -281,15 +281,23 @@ python yt_history.py list -v
 ```
 yt-setup/
 ├── src/
+│   ├── __init__.py            # Public module interface
+│   ├── constants.py           # Enums, constants, UI messages
+│   ├── exceptions.py          # Custom exception hierarchy
+│   ├── config.py              # Configuration management (.env)
+│   ├── auth.py                # Authentication and cookie handling
+│   ├── models.py              # Data models (HistoryGroup)
+│   ├── history_filter.py      # Filtering and grouping utilities
+│   ├── progress.py            # Progress reporting
 │   ├── youtube_client.py      # HTTP client for YouTube API
-│   ├── history_parser.py      # Video/short parser
-│   └── history_fetcher.py     # Automatic pagination
+│   ├── history_parser.py      # Response parser (videos/shorts)
+│   └── history_fetcher.py     # Pagination and fetching
 │
-├── .env                       # Configuration (API key)
+├── .env                       # Configuration (API key, locale)
 ├── .env.example               # Configuration template
 ├── requirements.txt           # Python dependencies
-├── extract_cookies.py         # Cookie extraction
-├── yt_history.py              # Main CLI
+├── extract_cookies.py         # Cookie extraction tool
+├── yt_history.py              # Main CLI application
 └── browser_auth.json          # Saved cookies (generated)
 ```
 
@@ -299,6 +307,8 @@ yt-setup/
 2. **Cookie authentication** - Extracts cookies from browser automatically
 3. **Complete history** - Fetches videos, shorts, and music
 4. **Automatic pagination** - Iterates through all continuation tokens
+5. **Type-safe** - Fully typed with dataclasses and enums
+6. **Modular** - Clean separation of responsibilities (config, auth, parsing, filtering)
 
 ### Why Browser Cookies Instead of OAuth?
 
