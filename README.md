@@ -101,7 +101,7 @@ YOUTUBE_REGION=BR
 Extract cookies from your browser (one-time setup):
 
 ```bash
-python extract_cookies.py
+python yt_history.py extract-cookies
 ```
 
 **What it does:**
@@ -163,6 +163,7 @@ python yt_history.py list --limit 500 --live-cookies
 ```
 
 > **Verbose mode:** Add `--verbose` to see detailed progress and cookie extraction logs:
+>
 > ```bash
 > python yt_history.py list --verbose --live-cookies
 > ```
@@ -248,11 +249,14 @@ python yt_history.py export --output my_history.json --limit 0
 }
 ```
 
-### Refresh cookies
+### Extract cookies (setup)
 
 ```bash
-# When cookies expire
-python yt_history.py refresh-cookies
+# First-time setup or when cookies expire
+python yt_history.py extract-cookies
+
+# Save to custom file
+python yt_history.py extract-cookies --output custom_auth.json
 ```
 
 ### Help & Verbose Mode
@@ -270,6 +274,7 @@ python yt_history.py list -v
 ```
 
 **Verbose mode shows:**
+
 - Cookie extraction progress
 - Loading progress with item count
 - Debug logs from HTTP requests
@@ -296,7 +301,6 @@ yt-setup/
 ├── .env                       # Configuration (API key, locale)
 ├── .env.example               # Configuration template
 ├── requirements.txt           # Python dependencies
-├── extract_cookies.py         # Cookie extraction tool
 ├── yt_history.py              # Main CLI application
 └── browser_auth.json          # Saved cookies (generated)
 ```
@@ -363,7 +367,7 @@ Timeline:
 1. **Saved cookies** (default): Extract once, use until expiration (3-5 days)
 
    ```bash
-   python extract_cookies.py
+   python yt_history.py extract-cookies
    python yt_history.py list
    ```
 
@@ -392,7 +396,7 @@ Live extraction requires browser running locally but provides always-fresh cooki
 **Solution:**
 
 ```bash
-python yt_history.py refresh-cookies
+python yt_history.py extract-cookies
 ```
 
 ### "Chrome 127+ blocked cookies"
@@ -402,7 +406,7 @@ python yt_history.py refresh-cookies
 **Solution:** Use Firefox
 
 ```bash
-# extract_cookies.py automatically detects
+# extract-cookies automatically detects
 # and prioritizes Firefox if available
 ```
 
