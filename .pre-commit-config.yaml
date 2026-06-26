@@ -1,0 +1,92 @@
+# Pre-commit hooks configuration
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Ruff - Fast Python linter and formatter (replaces black, isort, flake8)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      # Run linter
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+
+      # Run formatter
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # Mypy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-requests>=2.31.0
+        args:
+          - --config-file=pyproject.toml
+        exclude: ^(venv/|\.venv/|build/|dist/)
+
+  # General code quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Check for files that would conflict in case-insensitive filesystems
+      - id: check-case-conflict
+
+      # Check for merge conflicts
+      - id: check-merge-conflict
+
+      # Check YAML syntax
+      - id: check-yaml
+
+      # Check TOML syntax
+      - id: check-toml
+
+      # Check JSON syntax
+      - id: check-json
+
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        exclude: \.json$
+
+      # Trim trailing whitespace
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+      # Check for debugger imports
+      - id: debug-statements
+
+      # Check for large files (>500KB)
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+      # Detect private keys
+      - id: detect-private-key
+
+# Configuration
+default_language_version:
+  python: python3
+
+# Performance optimization
+minimum_pre_commit_version: "4.0.0"
+
+# Fail fast on first error
+fail_fast: false
+
+# Files to exclude globally
+exclude: |
+  (?x)^(
+      venv/.*|
+      \.venv/.*|
+      __pycache__/.*|
+      \.git/.*|
+      \.mypy_cache/.*|
+      \.ruff_cache/.*|
+      \.pytest_cache/.*|
+      build/.*|
+      dist/.*|
+      .*\.egg-info/.*|
+      browser_auth\.json|
+      youtube_history\.json
+  )$

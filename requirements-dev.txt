@@ -1,0 +1,12 @@
+# Development dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Linter and formatter (replaces black, isort, flake8, pylint)
+ruff>=0.8.0
+
+# Static type checker (version locked to match pre-commit)
+mypy==2.1.0
+types-requests>=2.31.0
+
+# Pre-commit hooks
+pre-commit>=4.0.0

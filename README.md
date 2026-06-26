@@ -872,20 +872,78 @@ python yt_history.py export --type videos --limit 0
 
 Project created for personal use, but PRs are welcome!
 
-### How to contribute
+### Development Setup
+
+1. **Clone and install**
+
+   ```bash
+   git clone https://github.com/SamuelGadiel/yt_history.git
+   cd yt_history
+   python -m venv venv
+   source venv/bin/activate  # Mac/Linux (Windows: venv\Scripts\activate)
+   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
+   ```
+
+2. **Install pre-commit hooks**
+
+   ```bash
+   pre-commit install
+   ```
+
+   Pre-commit hooks will automatically run before each commit:
+   - **Ruff** - Linting and formatting (replaces black, isort, flake8, pylint)
+   - **Mypy** - Static type checking
+   - **Code quality checks** - Trailing whitespace, large files, private keys, etc.
+
+3. **Run quality checks manually**
+
+   ```bash
+   # Lint and format (auto-fix issues)
+   ruff check src/ yt_history.py --fix
+   ruff format src/ yt_history.py
+
+   # Type checking
+   mypy src/ yt_history.py
+
+   # Run all pre-commit hooks
+   pre-commit run --all-files
+   ```
+
+### How to Contribute
 
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+3. Make your changes
+4. Ensure all checks pass (`pre-commit run --all-files`)
+5. Commit your changes (pre-commit hooks run automatically)
+6. Push to branch (`git push origin feature/amazing-feature`)
+7. Open Pull Request
+
+### Code Quality Standards
+
+This project enforces strict code quality standards:
+
+- **Python 3.9+** - Type hints using modern syntax (`list[]`, `dict[]`, `str | None`)
+- **Type safety** - All functions must have type hints (enforced by mypy)
+- **Docstrings** - All public functions/classes must have Google-style docstrings
+- **Linting** - Code must pass ruff checks (PEP 8, import sorting, code simplifications)
+- **Formatting** - Code is auto-formatted by ruff (100 char line length)
+
+### Configuration Files
+
+- [`pyproject.toml`](pyproject.toml) - Ruff and mypy configuration
+- [`.pre-commit-config.yaml`](.pre-commit-config.yaml) - Pre-commit hooks
+- [`requirements-dev.txt`](requirements-dev.txt) - Development dependencies
 
 ### Guidelines
 
-- Maintain type hints in all Python code
-- Add tests for new features
-- Update README if adding commands/flags
-- Follow PEP 8 (use `black` for formatting)
+- **Maintain type hints** - All functions must have full type annotations
+- **Write docstrings** - Use Google-style docstrings for all public APIs
+- **Add tests** - New features should include tests (when test suite is available)
+- **Update README** - Document new commands, flags, or features
+- **Follow existing patterns** - Match the code style of existing modules
+- **Keep it simple** - Avoid premature optimization and over-engineering
 
 ---
 
