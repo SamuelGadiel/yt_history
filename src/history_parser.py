@@ -3,8 +3,9 @@ Parser for YouTube watch history.
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 import logging
+
+from .exceptions import ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,9 @@ class HistoryItem:
         return f"<HistoryItem {self.item_type}: {self.title[:50]}>"
 
 
+__all__ = ['HistoryItem', 'HistoryParser']
+
+
 class HistoryParser:
     """Parser for history API response."""
 
@@ -79,7 +83,7 @@ class HistoryParser:
                 sections = contents["sectionListRenderer"]["contents"]
             except (KeyError, IndexError) as e:
                 logger.error(f"Invalid response structure (first page): {e}", exc_info=True)
-                raise ValueError(f"Invalid response structure (first page): {e}")
+                raise ParseError(f"Invalid response structure (first page): {e}")
 
         # Continuation pages
         elif "onResponseReceivedActions" in response:
@@ -91,10 +95,10 @@ class HistoryParser:
                         break
             except (KeyError, IndexError) as e:
                 logger.error(f"Invalid response structure (continuation): {e}", exc_info=True)
-                raise ValueError(f"Invalid response structure (continuation): {e}")
+                raise ParseError(f"Invalid response structure (continuation): {e}")
 
         else:
-            raise ValueError("Response without 'contents' or 'onResponseReceivedActions'")
+            raise ParseError("Response without 'contents' or 'onResponseReceivedActions'")
 
         # Process each section
         for section in sections:
