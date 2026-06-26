@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-YouTube History CLI - Fetch complete YouTube watch history.
+"""YouTube History CLI - Fetch complete YouTube watch history.
 
 Usage:
     python yt_history.py list              # List last 50 items
@@ -9,29 +8,37 @@ Usage:
     python yt_history.py search "term"     # Search in history
 """
 
-import sys
-import json
+from __future__ import annotations
+
 import argparse
+import json
 import logging
+import sys
 from pathlib import Path
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.youtube_client import YouTubeClient
-from src.history_fetcher import HistoryFetcher
-from src.history_parser import HistoryItem
 from src.auth import load_cookies
-from src.models import HistoryGroup
-from src.history_filter import filter_by_type, separate_by_type, search_items
+from src.exceptions import AuthenticationError, YouTubeHistoryError
+from src.history_fetcher import HistoryFetcher
+from src.history_filter import filter_by_type, search_items, separate_by_type
 from src.progress import ProgressReporter
-from src.exceptions import YouTubeHistoryError, AuthenticationError
+from src.youtube_client import YouTubeClient
+
+if TYPE_CHECKING:
+    from src.history_parser import HistoryItem
+    from src.models import HistoryGroup
 
 
 def cmd_list(args: argparse.Namespace) -> None:
-    """Command: list - Display history items."""
-    verbose = getattr(args, 'verbose', False)
+    """Execute list command - display history items.
+
+    Args:
+        args: Parsed command-line arguments containing limit, type, json, verbose flags.
+    """
+    verbose = getattr(args, "verbose", False)
 
     if not args.json and verbose:
         print("🔍 Fetching YouTube history...")
@@ -72,8 +79,12 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_export(args: argparse.Namespace) -> None:
-    """Command: export - Export history to file."""
-    verbose = getattr(args, 'verbose', False)
+    """Execute export command - export history to JSON file.
+
+    Args:
+        args: Parsed command-line arguments containing output, limit, type, verbose flags.
+    """
+    verbose = getattr(args, "verbose", False)
 
     if verbose:
         print("📦 Exporting YouTube history...")
@@ -115,8 +126,12 @@ def cmd_export(args: argparse.Namespace) -> None:
 
 
 def cmd_search(args: argparse.Namespace) -> None:
-    """Command: search - Search term in history."""
-    verbose = getattr(args, 'verbose', False)
+    """Execute search command - search for term in history.
+
+    Args:
+        args: Parsed command-line arguments containing query, limit, type, verbose flags.
+    """
+    verbose = getattr(args, "verbose", False)
 
     if verbose:
         print(f"🔎 Searching '{args.query}' in history...")
@@ -158,7 +173,9 @@ def cmd_search(args: argparse.Namespace) -> None:
     # Print summary
     total_matches = len(matches)
     if args.type == "all" and matched_videos and matched_shorts:
-        print(f"\n✅ {total_matches} result(s) found ({len(matched_shorts)} shorts, {len(matched_videos)} videos)")
+        print(
+            f"\n✅ {total_matches} result(s) found ({len(matched_shorts)} shorts, {len(matched_videos)} videos)"
+        )
     else:
         print(f"\n✅ {total_matches} result(s) found")
 
@@ -168,9 +185,13 @@ def cmd_search(args: argparse.Namespace) -> None:
 
 
 def cmd_extract_cookies(args: argparse.Namespace) -> None:
-    """Command: extract-cookies - Extract fresh cookies from browser."""
+    """Execute extract-cookies command - extract fresh cookies from browser.
+
+    Args:
+        args: Parsed command-line arguments containing output file path.
+    """
     try:
-        import browser_cookie3
+        import browser_cookie3  # noqa: F401
     except ImportError:
         print("❌ Error: 'browser-cookie3' library not installed")
         print("\nInstall with: pip install browser-cookie3")
@@ -180,7 +201,7 @@ def cmd_extract_cookies(args: argparse.Namespace) -> None:
         detect_available_browsers,
         extract_from_first_available,
         save_cookies_to_file,
-        test_authentication
+        test_authentication,
     )
     from src.exceptions import CookieExtractionError
 
@@ -205,19 +226,19 @@ def cmd_extract_cookies(args: argparse.Namespace) -> None:
     # Extract cookies
     print(f"\n{'=' * 60}")
     try:
-        cookie_string, cookies = extract_from_first_available(available, verbose=True)
+        cookie_string, _cookies = extract_from_first_available(available, verbose=True)
     except CookieExtractionError as e:
         print(f"\n❌ Failed: {e}")
-        if browser == 'chrome':
+        if browser == "chrome":
             print("\n💡 Chrome 127+ blocked cookies.")
             print("   Try Firefox or manual method.")
         sys.exit(1)
 
     # Save cookies
-    output_file = args.output if hasattr(args, 'output') else 'browser_auth.json'
+    output_file = args.output if hasattr(args, "output") else "browser_auth.json"
     try:
         auth_file = save_cookies_to_file(cookie_string, output_file, verbose=True)
-    except IOError as e:
+    except OSError as e:
         print(f"\n❌ Error saving cookies: {e}")
         sys.exit(1)
 
@@ -228,15 +249,20 @@ def cmd_extract_cookies(args: argparse.Namespace) -> None:
     print(f"\n{'=' * 60}")
     if success:
         print("✅ SUCCESS!")
-        print(f"\nUse with:")
-        print(f"  python yt_history.py list")
+        print("\nUse with:")
+        print("  python yt_history.py list")
     else:
         print("⚠️  Cookies extracted but test failed.")
     print("=" * 60)
 
 
 def _print_summary(grouped: HistoryGroup, type_filter: str) -> None:
-    """Print summary of found items."""
+    """Print summary of found items.
+
+    Args:
+        grouped: Grouped history items.
+        type_filter: Type filter applied ("all", "videos", "shorts").
+    """
     total = grouped.total_items
     videos_count = len(grouped.videos)
     shorts_count = len(grouped.shorts)
@@ -250,15 +276,14 @@ def _print_summary(grouped: HistoryGroup, type_filter: str) -> None:
 def _display_items_grouped(
     shorts: list[HistoryItem],
     videos: list[HistoryItem],
-    start_index: int = 1
+    start_index: int = 1,
 ) -> None:
-    """
-    Display items grouped by type.
+    """Display items grouped by type.
 
     Args:
-        shorts: List of short items
-        videos: List of video items
-        start_index: Starting number for display (default: 1)
+        shorts: List of short items.
+        videos: List of video items.
+        start_index: Starting number for display (default: 1).
     """
     counter = start_index
 
@@ -288,25 +313,20 @@ def _display_items_grouped(
 
 
 def setup_logging(verbose: bool = False) -> None:
-    """
-    Configure logging based on verbosity level.
+    """Configure logging based on verbosity level.
 
     Args:
-        verbose: Enable debug-level logging if True
+        verbose: Enable debug-level logging if True.
     """
     level = logging.DEBUG if verbose else logging.WARNING
-    logging.basicConfig(
-        level=level,
-        format="%(levelname)s [%(name)s]: %(message)s"
-    )
+    logging.basicConfig(level=level, format="%(levelname)s [%(name)s]: %(message)s")
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """
-    Create argument parser with all commands and options.
+    """Create argument parser with all commands and options.
 
     Returns:
-        Configured ArgumentParser instance
+        Configured ArgumentParser instance.
     """
     # Parent parser for shared arguments
     parent_parser = argparse.ArgumentParser(add_help=False)
@@ -314,18 +334,15 @@ def create_parser() -> argparse.ArgumentParser:
         "--auth",
         default="browser_auth.json",
         metavar="FILE",
-        help="authentication file (default: browser_auth.json)"
+        help="authentication file (default: browser_auth.json)",
     )
     parent_parser.add_argument(
         "--live-cookies",
         action="store_true",
-        help="extract fresh cookies from browser on every command (ignores --auth)"
+        help="extract fresh cookies from browser on every command (ignores --auth)",
     )
     parent_parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="enable verbose logging (debug level)"
+        "--verbose", "-v", action="store_true", help="enable verbose logging (debug level)"
     )
 
     parser = argparse.ArgumentParser(
@@ -349,14 +366,14 @@ Examples:
   %(prog)s export --output my.json                 # Export to custom file
   %(prog)s extract-cookies                         # Extract cookies from browser (first-time setup)
   %(prog)s extract-cookies --output custom.json    # Save to custom file
-        """
+        """,
     )
 
     subparsers = parser.add_subparsers(
         dest="command",
         title="commands",
         description="available commands",
-        metavar="{list,export,search,extract-cookies}"
+        metavar="{list,export,search,extract-cookies}",
     )
 
     # Command: list
@@ -364,25 +381,23 @@ Examples:
         "list",
         help="list history items",
         description="Display YouTube watch history with videos and shorts.",
-        parents=[parent_parser]
+        parents=[parent_parser],
     )
     list_parser.add_argument(
         "--limit",
         type=int,
         default=50,
         metavar="N",
-        help="maximum number of items to fetch (default: 50, use 0 for all)"
+        help="maximum number of items to fetch (default: 50, use 0 for all)",
     )
     list_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="output as JSON instead of human-readable format"
+        "--json", action="store_true", help="output as JSON instead of human-readable format"
     )
     list_parser.add_argument(
         "--type",
         choices=["all", "videos", "shorts"],
         default="all",
-        help="filter by item type (default: all)"
+        help="filter by item type (default: all)",
     )
 
     # Command: export
@@ -390,26 +405,26 @@ Examples:
         "export",
         help="export history to JSON",
         description="Export YouTube watch history to a JSON file.",
-        parents=[parent_parser]
+        parents=[parent_parser],
     )
     export_parser.add_argument(
         "--output",
         default="youtube_history.json",
         metavar="FILE",
-        help="output file path (default: youtube_history.json)"
+        help="output file path (default: youtube_history.json)",
     )
     export_parser.add_argument(
         "--limit",
         type=int,
         default=50,
         metavar="N",
-        help="maximum number of items to export (default: 50, use 0 for all)"
+        help="maximum number of items to export (default: 50, use 0 for all)",
     )
     export_parser.add_argument(
         "--type",
         choices=["all", "videos", "shorts"],
         default="all",
-        help="filter by item type (default: all)"
+        help="filter by item type (default: all)",
     )
 
     # Command: search
@@ -417,52 +432,49 @@ Examples:
         "search",
         help="search in history",
         description="Search for videos/channels in your watch history.",
-        parents=[parent_parser]
+        parents=[parent_parser],
     )
     search_parser.add_argument(
-        "query",
-        metavar="TERM",
-        help="search term (matches title or channel name)"
+        "query", metavar="TERM", help="search term (matches title or channel name)"
     )
     search_parser.add_argument(
         "--limit",
         type=int,
         default=50,
         metavar="N",
-        help="search in last N items (default: 50, use 0 for all history)"
+        help="search in last N items (default: 50, use 0 for all history)",
     )
     search_parser.add_argument(
         "--type",
         choices=["all", "videos", "shorts"],
         default="all",
-        help="filter by item type (default: all)"
+        help="filter by item type (default: all)",
     )
 
     # Command: extract-cookies
     extract_parser = subparsers.add_parser(
         "extract-cookies",
         help="extract cookies from browser",
-        description="Extract YouTube cookies from browser for authentication (first-time setup)."
+        description="Extract YouTube cookies from browser for authentication (first-time setup).",
     )
     extract_parser.add_argument(
         "--output",
         default="browser_auth.json",
         metavar="FILE",
-        help="output file path (default: browser_auth.json)"
+        help="output file path (default: browser_auth.json)",
     )
 
     return parser
 
 
 def check_auth_file(args: argparse.Namespace) -> None:
-    """
-    Check if authentication file exists.
+    """Check if authentication file exists.
 
     Args:
-        args: Parsed arguments
+        args: Parsed arguments.
 
     Raises:
-        SystemExit: If auth file not found (unless using live cookies or extract-cookies command)
+        SystemExit: If auth file not found (unless using live cookies or extract-cookies command).
     """
     if args.command == "extract-cookies" or args.live_cookies:
         return
@@ -477,12 +489,12 @@ def check_auth_file(args: argparse.Namespace) -> None:
 
 
 def main() -> NoReturn:
-    """Main entry point."""
+    """Main entry point for CLI application."""
     parser = create_parser()
     args = parser.parse_args()
 
     # Setup logging
-    verbose = getattr(args, 'verbose', False)
+    verbose = getattr(args, "verbose", False)
     setup_logging(verbose=verbose)
 
     # Check command
@@ -524,6 +536,7 @@ def main() -> NoReturn:
         print(f"\n❌ Error: {e}")
         if verbose:
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 

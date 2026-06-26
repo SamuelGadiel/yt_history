@@ -1,19 +1,25 @@
 """Progress reporting utilities."""
 
-from typing import Optional, Callable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class ProgressReporter:
-    """Creates progress callback functions for history fetching."""
+    """Creates progress callback functions for history fetching.
+
+    Provides factory methods for creating progress callbacks that display
+    loading status during long-running operations (fetch, export, search).
+    """
 
     @staticmethod
     def create_loading_callback(
-        verbose: bool,
-        json_mode: bool = False,
-        limit: Optional[int] = None
+        verbose: bool, json_mode: bool = False, limit: int | None = None
     ) -> Callable[[int], None]:
-        """
-        Create a progress callback for loading operations.
+        """Create a progress callback for loading operations.
 
         Args:
             verbose: Whether to show progress
@@ -33,12 +39,8 @@ class ProgressReporter:
         return progress
 
     @staticmethod
-    def create_fetching_callback(
-        verbose: bool,
-        limit: Optional[int] = None
-    ) -> Callable[[int], None]:
-        """
-        Create a progress callback for fetching/export operations.
+    def create_fetching_callback(verbose: bool, limit: int | None = None) -> Callable[[int], None]:
+        """Create a progress callback for fetching/export operations.
 
         Args:
             verbose: Whether to show progress
@@ -57,12 +59,8 @@ class ProgressReporter:
         return progress
 
     @staticmethod
-    def create_analyzing_callback(
-        verbose: bool,
-        limit: Optional[int] = None
-    ) -> Callable[[int], None]:
-        """
-        Create a progress callback for analyzing/search operations.
+    def create_analyzing_callback(verbose: bool, limit: int | None = None) -> Callable[[int], None]:
+        """Create a progress callback for analyzing/search operations.
 
         Args:
             verbose: Whether to show progress
@@ -81,4 +79,4 @@ class ProgressReporter:
         return progress
 
 
-__all__ = ['ProgressReporter']
+__all__ = ["ProgressReporter"]

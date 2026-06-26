@@ -1,10 +1,10 @@
-"""
-HTTP client for YouTube API (watch history).
-"""
+"""HTTP client for YouTube API (watch history)."""
 
-import time
+from __future__ import annotations
+
 import hashlib
-from typing import Dict, Any, Optional
+import time
+from typing import Any
 
 import requests
 
@@ -18,9 +18,8 @@ class YouTubeClient:
     BASE_URL = "https://www.youtube.com/youtubei/v1/"
     USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    def __init__(self, cookies: Dict[str, str], config: Optional[AppConfig] = None):
-        """
-        Initialize YouTube client.
+    def __init__(self, cookies: dict[str, str], config: AppConfig | None = None):
+        """Initialize YouTube client.
 
         Args:
             cookies: Dict with YouTube cookies (extracted from browser)
@@ -43,15 +42,13 @@ class YouTubeClient:
 
         self.session.headers.update(self._get_base_headers(language))
 
-        self.context = {
+        self.context: dict[str, Any] = {
             "client": {
                 "clientName": "WEB",
                 "clientVersion": "2.20250124.00.00",
                 "userAgent": self.USER_AGENT,
             },
-            "user": {
-                "lockedSafetyMode": False
-            }
+            "user": {"lockedSafetyMode": False},
         }
 
         # Add locale only if configured
@@ -60,9 +57,8 @@ class YouTubeClient:
         if region:
             self.context["client"]["gl"] = region
 
-    def _get_base_headers(self, language: Optional[str]) -> Dict[str, str]:
-        """
-        Build HTTP headers for authentication.
+    def _get_base_headers(self, language: str | None) -> dict[str, str]:
+        """Build HTTP headers for authentication.
 
         Args:
             language: Optional language code (e.g., "en-US", "pt-BR")
@@ -73,8 +69,8 @@ class YouTubeClient:
         Raises:
             AuthenticationError: If SAPISID cookie not found
         """
-        cookie_string = '; '.join([f"{k}={v}" for k, v in self.cookies.items()])
-        sapisid = self.cookies.get('SAPISID') or self.cookies.get('__Secure-3PAPISID')
+        cookie_string = "; ".join([f"{k}={v}" for k, v in self.cookies.items()])
+        sapisid = self.cookies.get("SAPISID") or self.cookies.get("__Secure-3PAPISID")
 
         if not sapisid:
             raise AuthenticationError(
@@ -89,7 +85,7 @@ class YouTubeClient:
 
         # Build Accept-Language header
         if language:
-            lang_code = language.split('-')[0] if '-' in language else language
+            lang_code = language.split("-")[0] if "-" in language else language
             accept_language = f"{language},{lang_code};q=0.9,en-US;q=0.8,en;q=0.7"
         else:
             accept_language = "en-US,en;q=0.9"
@@ -107,9 +103,8 @@ class YouTubeClient:
             "X-Origin": origin,
         }
 
-    def _send_request(self, endpoint: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Send HTTP request to YouTube API.
+    def _send_request(self, endpoint: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Send HTTP request to YouTube API.
 
         Args:
             endpoint: Endpoint name (e.g., "browse")
@@ -123,27 +118,24 @@ class YouTubeClient:
         """
         url = f"{self.BASE_URL}{endpoint}?key={self.api_key}&prettyPrint=false"
 
-        payload = body or {}
+        payload: dict[str, Any] = body.copy() if body else {}
         payload["context"] = self.context
 
         try:
             response = self.session.post(url, json=payload)
         except requests.RequestException as e:
-            raise APIError(f"Network error: {e}")
+            raise APIError(f"Network error: {e}") from e
 
         if response.status_code != 200:
-            raise APIError(
-                f"YouTube API returned {response.status_code}: {response.text[:200]}"
-            )
+            raise APIError(f"YouTube API returned {response.status_code}: {response.text[:200]}")
 
         try:
             return response.json()
         except ValueError as e:
-            raise APIError(f"Invalid JSON response: {e}")
+            raise APIError(f"Invalid JSON response: {e}") from e
 
-    def get_history(self, continuation: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Fetch YouTube watch history.
+    def get_history(self, continuation: str | None = None) -> dict[str, Any]:
+        """Fetch YouTube watch history.
 
         Args:
             continuation: Pagination token (None = first page)
@@ -157,9 +149,8 @@ class YouTubeClient:
         body = {"continuation": continuation} if continuation else {"browseId": "FEhistory"}
         return self._send_request("browse", body)
 
-    def get_continuation_token(self, response: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract pagination token from response.
+    def get_continuation_token(self, response: dict[str, Any]) -> str | None:
+        """Extract pagination token from response.
 
         Args:
             response: JSON response
@@ -169,7 +160,9 @@ class YouTubeClient:
         """
         try:
             if "contents" in response:
-                contents = response["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]
+                contents = response["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0][
+                    "tabRenderer"
+                ]["content"]
                 sections = contents["sectionListRenderer"]["contents"]
             elif "onResponseReceivedActions" in response:
                 actions = response["onResponseReceivedActions"]
@@ -193,9 +186,8 @@ class YouTubeClient:
 
         return None
 
-    def get_library(self) -> Dict[str, Any]:
-        """
-        Fetch YouTube library.
+    def get_library(self) -> dict[str, Any]:
+        """Fetch YouTube library.
 
         Returns:
             JSON response with library data
@@ -206,9 +198,8 @@ class YouTubeClient:
         body = {"browseId": "FElibrary"}
         return self._send_request("browse", body)
 
-    def get_subscriptions(self) -> Dict[str, Any]:
-        """
-        Fetch YouTube subscriptions.
+    def get_subscriptions(self) -> dict[str, Any]:
+        """Fetch YouTube subscriptions.
 
         Returns:
             JSON response with subscriptions
@@ -220,4 +211,4 @@ class YouTubeClient:
         return self._send_request("browse", body)
 
 
-__all__ = ['YouTubeClient']
+__all__ = ["YouTubeClient"]

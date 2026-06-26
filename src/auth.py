@@ -1,16 +1,19 @@
 """Authentication and cookie management."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
-from argparse import Namespace
+from typing import TYPE_CHECKING
 
 from .exceptions import AuthenticationError, CookieExtractionError
 
+if TYPE_CHECKING:
+    from argparse import Namespace
 
-def load_cookies(args: Namespace) -> Dict[str, str]:
-    """
-    Load cookies from file or live extraction based on args.
+
+def load_cookies(args: Namespace) -> dict[str, str]:
+    """Load cookies from file or live extraction based on args.
 
     Args:
         args: Parsed command-line arguments with 'live_cookies' and 'auth' attributes
@@ -22,15 +25,14 @@ def load_cookies(args: Namespace) -> Dict[str, str]:
         AuthenticationError: If cookie loading fails
     """
     if args.live_cookies:
-        verbose = getattr(args, 'verbose', False) and not getattr(args, 'json', False)
+        verbose = getattr(args, "verbose", False) and not getattr(args, "json", False)
         return get_live_cookies(verbose=verbose)
     else:
         return load_cookies_from_file(args.auth)
 
 
-def load_cookies_from_file(filepath: str) -> Dict[str, str]:
-    """
-    Load cookies saved from browser.
+def load_cookies_from_file(filepath: str) -> dict[str, str]:
+    """Load cookies saved from browser.
 
     Args:
         filepath: Path to browser_auth.json
@@ -47,30 +49,29 @@ def load_cookies_from_file(filepath: str) -> Dict[str, str]:
         raise AuthenticationError(f"Authentication file not found: {filepath}")
 
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        raise AuthenticationError(f"Invalid JSON in {filepath}: {e}")
-    except IOError as e:
-        raise AuthenticationError(f"Failed to read {filepath}: {e}")
+        raise AuthenticationError(f"Invalid JSON in {filepath}: {e}") from e
+    except OSError as e:
+        raise AuthenticationError(f"Failed to read {filepath}: {e}") from e
 
-    cookie_string = data.get('cookie', '')
+    cookie_string = data.get("cookie", "")
 
     if not cookie_string:
         raise AuthenticationError(f"'cookie' field not found in {filepath}")
 
     cookies = {}
-    for item in cookie_string.split('; '):
-        if '=' in item:
-            key, value = item.split('=', 1)
+    for item in cookie_string.split("; "):
+        if "=" in item:
+            key, value = item.split("=", 1)
             cookies[key] = value
 
     return cookies
 
 
-def get_live_cookies(verbose: bool = True) -> Dict[str, str]:
-    """
-    Extract fresh cookies from browser without saving to file.
+def get_live_cookies(verbose: bool = True) -> dict[str, str]:
+    """Extract fresh cookies from browser without saving to file.
 
     Args:
         verbose: Print extraction progress (default: True)
@@ -82,18 +83,17 @@ def get_live_cookies(verbose: bool = True) -> Dict[str, str]:
         CookieExtractionError: If extraction fails
     """
     try:
-        import browser_cookie3
-    except ImportError:
+        import browser_cookie3  # noqa: F401
+    except ImportError as e:
         raise CookieExtractionError(
-            "'browser-cookie3' library not installed\n"
-            "Install with: pip install browser-cookie3"
-        )
+            "'browser-cookie3' library not installed\nInstall with: pip install browser-cookie3"
+        ) from e
 
     if verbose:
         print("🔴 Live mode: Extracting fresh cookies from browser...")
 
     # Detect available browsers
-    browsers = ['firefox', 'chrome', 'safari', 'edge', 'brave']
+    browsers = ["firefox", "chrome", "safari", "edge", "brave"]
 
     last_error = None
     for browser in browsers:
@@ -110,11 +110,9 @@ def get_live_cookies(verbose: bool = True) -> Dict[str, str]:
 
 
 def extract_cookies_from_browser(
-    browser_name: str = 'chrome',
-    verbose: bool = True
-) -> tuple[str, Dict[str, str]]:
-    """
-    Extract YouTube cookies from browser.
+    browser_name: str = "chrome", verbose: bool = True
+) -> tuple[str, dict[str, str]]:
+    """Extract YouTube cookies from browser.
 
     Args:
         browser_name: Browser to extract from (chrome, firefox, safari, edge, brave)
@@ -133,18 +131,18 @@ def extract_cookies_from_browser(
         print(f"📡 Extracting cookies from {browser_name.title()}...")
 
     browser_functions = {
-        'chrome': browser_cookie3.chrome,
-        'firefox': browser_cookie3.firefox,
-        'safari': browser_cookie3.safari,
-        'edge': browser_cookie3.edge,
-        'brave': browser_cookie3.brave,
+        "chrome": browser_cookie3.chrome,
+        "firefox": browser_cookie3.firefox,
+        "safari": browser_cookie3.safari,
+        "edge": browser_cookie3.edge,
+        "brave": browser_cookie3.brave,
     }
 
     if browser_name not in browser_functions:
         raise ValueError(f"Unsupported browser: {browser_name}")
 
     try:
-        cookiejar = browser_functions[browser_name](domain_name='youtube.com')
+        cookiejar = browser_functions[browser_name](domain_name="youtube.com")
 
         cookies = {}
         for cookie in cookiejar:
@@ -156,13 +154,13 @@ def extract_cookies_from_browser(
         if verbose:
             print(f"   ✓ {len(cookies)} cookies extracted")
 
-            critical = ['__Secure-3PAPISID', 'SAPISID', 'HSID', 'SSID', 'SID']
+            critical = ["__Secure-3PAPISID", "SAPISID", "HSID", "SSID", "SID"]
             found = [n for n in critical if n in cookies]
 
             if found:
                 print(f"   ✓ Critical cookies: {', '.join(found)}")
 
-        cookie_string = '; '.join([f"{name}={value}" for name, value in cookies.items()])
+        cookie_string = "; ".join([f"{name}={value}" for name, value in cookies.items()])
         return cookie_string, cookies
 
     except CookieExtractionError:
@@ -170,12 +168,11 @@ def extract_cookies_from_browser(
     except Exception as e:
         if verbose:
             print(f"   ✗ Error: {e}")
-        raise CookieExtractionError(f"Failed to extract cookies from {browser_name}: {e}")
+        raise CookieExtractionError(f"Failed to extract cookies from {browser_name}: {e}") from e
 
 
-def detect_available_browsers(verbose: bool = True) -> List[str]:
-    """
-    Detect which browsers are available on the system.
+def detect_available_browsers(verbose: bool = True) -> list[str]:
+    """Detect which browsers are available on the system.
 
     Args:
         verbose: Print detection progress (default: True)
@@ -191,14 +188,14 @@ def detect_available_browsers(verbose: bool = True) -> List[str]:
     if verbose:
         print("\n🔍 Detecting browsers...")
 
-    browsers = ['firefox', 'chrome', 'safari', 'edge', 'brave']
+    browsers = ["firefox", "chrome", "safari", "edge", "brave"]
     available = []
 
     for browser in browsers:
         try:
             func = getattr(browser_cookie3, browser)
             # Quick test to see if browser is accessible
-            func(domain_name='google.com')
+            func(domain_name="google.com")
             available.append(browser)
             if verbose:
                 print(f"   ✓ {browser.title()}")
@@ -209,9 +206,10 @@ def detect_available_browsers(verbose: bool = True) -> List[str]:
     return available
 
 
-def extract_from_first_available(browsers: List[str], verbose: bool = True) -> Tuple[str, Dict[str, str]]:
-    """
-    Extract cookies from first available browser.
+def extract_from_first_available(
+    browsers: list[str], verbose: bool = True
+) -> tuple[str, dict[str, str]]:
+    """Extract cookies from first available browser.
 
     Args:
         browsers: List of browser names to try
@@ -232,9 +230,10 @@ def extract_from_first_available(browsers: List[str], verbose: bool = True) -> T
     raise CookieExtractionError("Failed to extract cookies from all available browsers")
 
 
-def save_cookies_to_file(cookie_string: str, filepath: str = 'browser_auth.json', verbose: bool = True) -> str:
-    """
-    Save cookies to JSON file.
+def save_cookies_to_file(
+    cookie_string: str, filepath: str = "browser_auth.json", verbose: bool = True
+) -> str:
+    """Save cookies to JSON file.
 
     Args:
         cookie_string: Cookie string to save
@@ -248,15 +247,15 @@ def save_cookies_to_file(cookie_string: str, filepath: str = 'browser_auth.json'
         IOError: If file cannot be written
     """
     if verbose:
-        print(f"\n💾 Saving cookies...")
+        print("\n💾 Saving cookies...")
 
     auth_data = {"cookie": cookie_string}
 
     try:
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(auth_data, f, indent=2)
-    except IOError as e:
-        raise IOError(f"Failed to save cookies to {filepath}: {e}")
+    except OSError as e:
+        raise OSError(f"Failed to save cookies to {filepath}: {e}") from e
 
     abs_path = Path(filepath).absolute()
 
@@ -267,8 +266,7 @@ def save_cookies_to_file(cookie_string: str, filepath: str = 'browser_auth.json'
 
 
 def test_authentication(auth_file: str, verbose: bool = True) -> bool:
-    """
-    Test extracted cookies by fetching history.
+    """Test extracted cookies by fetching history.
 
     Args:
         auth_file: Path to auth file to test
@@ -278,11 +276,11 @@ def test_authentication(auth_file: str, verbose: bool = True) -> bool:
         True if authentication works, False otherwise
     """
     if verbose:
-        print(f"\n🧪 Testing authentication...")
+        print("\n🧪 Testing authentication...")
 
     try:
-        from .youtube_client import YouTubeClient
         from .history_parser import HistoryParser
+        from .youtube_client import YouTubeClient
 
         cookies = load_cookies_from_file(auth_file)
         client = YouTubeClient(cookies)
@@ -303,12 +301,12 @@ def test_authentication(auth_file: str, verbose: bool = True) -> bool:
 
 
 __all__ = [
-    'load_cookies',
-    'load_cookies_from_file',
-    'get_live_cookies',
-    'extract_cookies_from_browser',
-    'detect_available_browsers',
-    'extract_from_first_available',
-    'save_cookies_to_file',
-    'test_authentication',
+    "detect_available_browsers",
+    "extract_cookies_from_browser",
+    "extract_from_first_available",
+    "get_live_cookies",
+    "load_cookies",
+    "load_cookies_from_file",
+    "save_cookies_to_file",
+    "test_authentication",
 ]

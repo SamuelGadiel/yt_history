@@ -1,14 +1,17 @@
 """History filtering and grouping utilities."""
 
-from typing import List, Dict
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from .models import HistoryGroup
-from .history_parser import HistoryItem
+
+if TYPE_CHECKING:
+    from .history_parser import HistoryItem
 
 
 def filter_by_type(grouped: HistoryGroup, type_filter: str) -> HistoryGroup:
-    """
-    Filter grouped history by item type.
+    """Filter grouped history by item type.
 
     Args:
         grouped: HistoryGroup to filter
@@ -26,16 +29,12 @@ def filter_by_type(grouped: HistoryGroup, type_filter: str) -> HistoryGroup:
     stats = recalculate_stats(videos, shorts)
 
     return HistoryGroup(
-        total_items=len(videos) + len(shorts),
-        statistics=stats,
-        videos=videos,
-        shorts=shorts
+        total_items=len(videos) + len(shorts), statistics=stats, videos=videos, shorts=shorts
     )
 
 
-def recalculate_stats(videos: List[HistoryItem], shorts: List[HistoryItem]) -> Dict[str, int]:
-    """
-    Recalculate statistics for videos and shorts.
+def recalculate_stats(videos: list[HistoryItem], shorts: list[HistoryItem]) -> dict[str, int]:
+    """Recalculate statistics for videos and shorts.
 
     Args:
         videos: List of video items
@@ -52,9 +51,8 @@ def recalculate_stats(videos: List[HistoryItem], shorts: List[HistoryItem]) -> D
     return stats
 
 
-def separate_by_type(items: List[HistoryItem]) -> tuple[List[HistoryItem], List[HistoryItem]]:
-    """
-    Separate items into videos and shorts.
+def separate_by_type(items: list[HistoryItem]) -> tuple[list[HistoryItem], list[HistoryItem]]:
+    """Separate items into videos and shorts.
 
     Args:
         items: List of mixed HistoryItem objects
@@ -67,12 +65,8 @@ def separate_by_type(items: List[HistoryItem]) -> tuple[List[HistoryItem], List[
     return videos, shorts
 
 
-def search_items(
-    items: List[HistoryItem],
-    query: str
-) -> List[HistoryItem]:
-    """
-    Search items by title or channel name.
+def search_items(items: list[HistoryItem], query: str) -> list[HistoryItem]:
+    """Search items by title or channel name.
 
     Args:
         items: List of HistoryItem to search
@@ -83,15 +77,11 @@ def search_items(
     """
     query_lower = query.lower()
     return [
-        item for item in items
-        if query_lower in item.title.lower() or
-           (item.channel_name and query_lower in item.channel_name.lower())
+        item
+        for item in items
+        if query_lower in item.title.lower()
+        or (item.channel_name and query_lower in item.channel_name.lower())
     ]
 
 
-__all__ = [
-    'filter_by_type',
-    'recalculate_stats',
-    'separate_by_type',
-    'search_items'
-]
+__all__ = ["filter_by_type", "recalculate_stats", "search_items", "separate_by_type"]

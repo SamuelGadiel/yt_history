@@ -1,9 +1,9 @@
-"""
-Parser for YouTube watch history.
-"""
+"""Parser for YouTube watch history."""
 
-from typing import List, Dict, Any, Optional
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from .exceptions import ParseError
 
@@ -11,20 +11,45 @@ logger = logging.getLogger(__name__)
 
 
 class HistoryItem:
-    """Represents a history item."""
+    """Represents a YouTube history item (video or short).
+
+    Attributes:
+        video_id: YouTube video ID (11 characters).
+        title: Video or short title.
+        channel_name: Channel name (may be None for shorts).
+        channel_id: Channel ID (may be None for shorts).
+        thumbnail_url: Thumbnail URL.
+        duration: Video duration (e.g., "10:45", may be None for shorts).
+        view_count: View count text (e.g., "1.2M views").
+        watched_time: When watched (e.g., "Today", "Yesterday").
+        item_type: Type of item ("video" or "short").
+    """
 
     def __init__(
         self,
         video_id: str,
         title: str,
-        channel_name: Optional[str] = None,
-        channel_id: Optional[str] = None,
-        thumbnail_url: Optional[str] = None,
-        duration: Optional[str] = None,
-        view_count: Optional[str] = None,
-        watched_time: Optional[str] = None,
-        item_type: str = "video"
-    ):
+        channel_name: str | None = None,
+        channel_id: str | None = None,
+        thumbnail_url: str | None = None,
+        duration: str | None = None,
+        view_count: str | None = None,
+        watched_time: str | None = None,
+        item_type: str = "video",
+    ) -> None:
+        """Initialize a history item.
+
+        Args:
+            video_id: YouTube video ID.
+            title: Video or short title.
+            channel_name: Channel name (optional).
+            channel_id: Channel ID (optional).
+            thumbnail_url: Thumbnail URL (optional).
+            duration: Video duration (optional).
+            view_count: View count text (optional).
+            watched_time: When watched (optional).
+            item_type: Type of item ("video" or "short").
+        """
         self.video_id = video_id
         self.title = title
         self.channel_name = channel_name
@@ -35,8 +60,12 @@ class HistoryItem:
         self.watched_time = watched_time
         self.item_type = item_type
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON export.
+
+        Returns:
+            Dictionary representation with all fields plus generated URL.
+        """
         return {
             "video_id": self.video_id,
             "title": self.title,
@@ -47,23 +76,27 @@ class HistoryItem:
             "view_count": self.view_count,
             "watched_time": self.watched_time,
             "type": self.item_type,
-            "url": f"https://www.youtube.com/watch?v={self.video_id}"
+            "url": f"https://www.youtube.com/watch?v={self.video_id}",
         }
 
     def __repr__(self) -> str:
+        """Return string representation for debugging."""
         return f"<HistoryItem {self.item_type}: {self.title[:50]}>"
 
 
-__all__ = ['HistoryItem', 'HistoryParser']
+__all__ = ["HistoryItem", "HistoryParser"]
 
 
 class HistoryParser:
-    """Parser for history API response."""
+    """Parser for YouTube history API responses.
+
+    Parses JSON responses from YouTube's internal API and extracts
+    video and short items with metadata (title, channel, duration, etc.).
+    """
 
     @staticmethod
-    def parse_response(response: Dict[str, Any]) -> List[HistoryItem]:
-        """
-        Parse complete API response.
+    def parse_response(response: dict[str, Any]) -> list[HistoryItem]:
+        """Parse complete API response.
 
         Args:
             response: JSON response
@@ -71,7 +104,7 @@ class HistoryParser:
         Returns:
             List of HistoryItem
         """
-        items: List[HistoryItem] = []
+        items: list[HistoryItem] = []
 
         # Identify response type
         sections = []
@@ -79,11 +112,13 @@ class HistoryParser:
         # First page (browseId)
         if "contents" in response:
             try:
-                contents = response["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]
+                contents = response["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0][
+                    "tabRenderer"
+                ]["content"]
                 sections = contents["sectionListRenderer"]["contents"]
             except (KeyError, IndexError) as e:
                 logger.error(f"Invalid response structure (first page): {e}", exc_info=True)
-                raise ParseError(f"Invalid response structure (first page): {e}")
+                raise ParseError(f"Invalid response structure (first page): {e}") from e
 
         # Continuation pages
         elif "onResponseReceivedActions" in response:
@@ -95,7 +130,7 @@ class HistoryParser:
                         break
             except (KeyError, IndexError) as e:
                 logger.error(f"Invalid response structure (continuation): {e}", exc_info=True)
-                raise ParseError(f"Invalid response structure (continuation): {e}")
+                raise ParseError(f"Invalid response structure (continuation): {e}") from e
 
         else:
             raise ParseError("Response without 'contents' or 'onResponseReceivedActions'")
@@ -118,7 +153,7 @@ class HistoryParser:
         return items
 
     @staticmethod
-    def _extract_section_timestamp(header: Dict[str, Any]) -> Optional[str]:
+    def _extract_section_timestamp(header: dict[str, Any]) -> str | None:
         """Extract timestamp from section (e.g., "Today", "Yesterday", specific date)."""
         if not header:
             return None
@@ -134,9 +169,10 @@ class HistoryParser:
         return None
 
     @staticmethod
-    def _parse_item(item_data: Dict[str, Any], watched_time: Optional[str] = None) -> List[HistoryItem]:
-        """
-        Parse single history item.
+    def _parse_item(
+        item_data: dict[str, Any], watched_time: str | None = None
+    ) -> list[HistoryItem]:
+        """Parse single history item.
 
         Args:
             item_data: Item data (can be various renderer types)
@@ -146,7 +182,7 @@ class HistoryParser:
             List of HistoryItem (usually 1, but reelShelfRenderer returns multiple)
         """
         # Identify renderer type
-        renderer_type = list(item_data.keys())[0] if item_data else None
+        renderer_type = next(iter(item_data.keys())) if item_data else None
 
         if not renderer_type:
             return []
@@ -169,9 +205,9 @@ class HistoryParser:
         return []
 
     @staticmethod
-    def _parse_reel_shelf(data: Dict[str, Any], watched_time: Optional[str]) -> List[HistoryItem]:
+    def _parse_reel_shelf(data: dict[str, Any], watched_time: str | None) -> list[HistoryItem]:
         """Parse shorts (reelShelfRenderer) - returns all shorts in shelf."""
-        parsed_shorts: List[HistoryItem] = []
+        parsed_shorts: list[HistoryItem] = []
 
         try:
             # reelShelfRenderer contains multiple shorts
@@ -207,14 +243,16 @@ class HistoryParser:
                     thumbnails = thumbnail_data.get("thumbnails", [])
                     thumbnail_url = thumbnails[0].get("url") if thumbnails else None
 
-                    parsed_shorts.append(HistoryItem(
-                        video_id=video_id,
-                        title=title,
-                        thumbnail_url=thumbnail_url,
-                        view_count=view_count,
-                        watched_time=watched_time,
-                        item_type="short"
-                    ))
+                    parsed_shorts.append(
+                        HistoryItem(
+                            video_id=video_id,
+                            title=title,
+                            thumbnail_url=thumbnail_url,
+                            view_count=view_count,
+                            watched_time=watched_time,
+                            item_type="short",
+                        )
+                    )
 
                 except (KeyError, IndexError, AttributeError, TypeError) as e:
                     logger.debug(f"Failed to parse short item: {e}", exc_info=True)
@@ -226,7 +264,9 @@ class HistoryParser:
         return parsed_shorts
 
     @staticmethod
-    def _parse_lockup_view_model(data: Dict[str, Any], watched_time: Optional[str]) -> Optional[HistoryItem]:
+    def _parse_lockup_view_model(
+        data: dict[str, Any], watched_time: str | None
+    ) -> HistoryItem | None:
         """Parse regular videos (lockupViewModel)."""
         try:
             # Video metadata
@@ -248,7 +288,11 @@ class HistoryParser:
             channel_id = browse_endpoint.get("browseId")
 
             # Additional metadata (channel name, views)
-            metadata_parts = metadata.get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
+            metadata_parts = (
+                metadata.get("metadata", {})
+                .get("contentMetadataViewModel", {})
+                .get("metadataRows", [])
+            )
 
             channel_name = None
             view_count = None
@@ -302,17 +346,16 @@ class HistoryParser:
                 duration=duration,
                 thumbnail_url=thumbnail,
                 watched_time=watched_time,
-                item_type="video"
+                item_type="video",
             )
 
         except (KeyError, IndexError, AttributeError, TypeError) as e:
             logger.debug(f"Failed to parse lockupViewModel: {e}", exc_info=True)
-            return None
 
         return None
 
     @staticmethod
-    def _parse_video_renderer(data: Dict[str, Any], watched_time: Optional[str]) -> Optional[HistoryItem]:
+    def _parse_video_renderer(data: dict[str, Any], watched_time: str | None) -> HistoryItem | None:
         """Parse old format (videoRenderer)."""
         try:
             video_id = data.get("videoId")
@@ -321,9 +364,10 @@ class HistoryParser:
 
             # Title
             title_data = data.get("title", {})
-            title = (
-                title_data.get("simpleText") or
-                (title_data.get("runs", [{}])[0].get("text") if title_data.get("runs") else "Untitled video")
+            title = title_data.get("simpleText") or (
+                title_data.get("runs", [{}])[0].get("text")
+                if title_data.get("runs")
+                else "Untitled video"
             )
 
             # Channel
@@ -333,7 +377,9 @@ class HistoryParser:
 
             if owner_text.get("runs"):
                 channel_name = owner_text["runs"][0].get("text")
-                browse_endpoint = owner_text["runs"][0].get("navigationEndpoint", {}).get("browseEndpoint", {})
+                browse_endpoint = (
+                    owner_text["runs"][0].get("navigationEndpoint", {}).get("browseEndpoint", {})
+                )
                 channel_id = browse_endpoint.get("browseId")
 
             # Thumbnail
@@ -355,7 +401,7 @@ class HistoryParser:
                 duration=duration,
                 view_count=view_count,
                 watched_time=watched_time,
-                item_type="video"
+                item_type="video",
             )
 
         except (KeyError, IndexError, AttributeError, TypeError) as e:

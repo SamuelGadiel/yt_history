@@ -1,21 +1,24 @@
-"""
-History fetcher with pagination support.
-"""
+"""History fetcher with pagination support."""
 
-from typing import List, Optional, Callable
+from __future__ import annotations
+
 import time
+from typing import TYPE_CHECKING
 
-from .youtube_client import YouTubeClient
-from .history_parser import HistoryParser, HistoryItem
+from .history_parser import HistoryItem, HistoryParser
 from .models import HistoryGroup
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .youtube_client import YouTubeClient
 
 
 class HistoryFetcher:
     """Fetch history with pagination support."""
 
     def __init__(self, client: YouTubeClient) -> None:
-        """
-        Initialize history fetcher.
+        """Initialize history fetcher.
 
         Args:
             client: Configured YouTube client
@@ -23,12 +26,9 @@ class HistoryFetcher:
         self.client = client
 
     def fetch_all(
-        self,
-        limit: Optional[int] = None,
-        progress_callback: Optional[Callable[[int], None]] = None
-    ) -> List[HistoryItem]:
-        """
-        Fetch all history (or up to limit).
+        self, limit: int | None = None, progress_callback: Callable[[int], None] | None = None
+    ) -> list[HistoryItem]:
+        """Fetch all history (or up to limit).
 
         Args:
             limit: Maximum number of items (None = all)
@@ -40,8 +40,8 @@ class HistoryFetcher:
         Raises:
             requests.HTTPError: If request fails
         """
-        all_items: List[HistoryItem] = []
-        continuation: Optional[str] = None
+        all_items: list[HistoryItem] = []
+        continuation: str | None = None
         page = 0
 
         while True:
@@ -75,9 +75,8 @@ class HistoryFetcher:
 
         return all_items
 
-    def fetch_page(self, continuation: Optional[str] = None) -> tuple[List[HistoryItem], Optional[str]]:
-        """
-        Fetch one page of history.
+    def fetch_page(self, continuation: str | None = None) -> tuple[list[HistoryItem], str | None]:
+        """Fetch one page of history.
 
         Args:
             continuation: Continuation token (None = first page)
@@ -92,12 +91,9 @@ class HistoryFetcher:
         return items, next_continuation
 
     def fetch_all_grouped(
-        self,
-        limit: Optional[int] = None,
-        progress_callback: Optional[Callable[[int], None]] = None
+        self, limit: int | None = None, progress_callback: Callable[[int], None] | None = None
     ) -> HistoryGroup:
-        """
-        Fetch all history grouped by type.
+        """Fetch all history grouped by type.
 
         Args:
             limit: Maximum number of items (None = all)
@@ -113,16 +109,13 @@ class HistoryFetcher:
         shorts = [item for item in all_items if item.item_type == "short"]
 
         # Statistics
-        stats = {}
+        stats: dict[str, int] = {}
         for item in all_items:
             stats[item.item_type] = stats.get(item.item_type, 0) + 1
 
         return HistoryGroup(
-            total_items=len(all_items),
-            statistics=stats,
-            videos=videos,
-            shorts=shorts
+            total_items=len(all_items), statistics=stats, videos=videos, shorts=shorts
         )
 
 
-__all__ = ['HistoryFetcher']
+__all__ = ["HistoryFetcher"]
