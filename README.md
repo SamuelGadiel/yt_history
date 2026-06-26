@@ -128,24 +128,33 @@ Use with:
 ### List history
 
 ```bash
-# Last 50 items (default)
+# Last 50 items (default, using saved cookies)
 python yt_history.py list
 
 # Last 200 items
 python yt_history.py list --limit 200
+
+# Using live cookies (extracted from browser on-the-fly)
+python yt_history.py list --live-cookies
+
+# Live mode with limit
+python yt_history.py list --limit 500 --live-cookies
 ```
 
 **Output:**
 
 ```
-🔍 Fetching YouTube history...
-   Loading... 50 items
+✅ 5 items found (2 shorts, 3 videos)
 
-✅ 5 items found
+📱 SHORTS
+────────────────────────────────────────────────────────────────────────────────
 
 1. 📱 Video title here
    🕐 Today
    🔗 https://www.youtube.com/watch?v=abc123
+
+🎬 VIDEOS
+────────────────────────────────────────────────────────────────────────────────
 
 2. 🎬 Another video
    📺 Channel Name
@@ -153,10 +162,15 @@ python yt_history.py list --limit 200
    🔗 https://www.youtube.com/watch?v=def456
 ```
 
+> **Verbose mode:** Add `--verbose` to see detailed progress and cookie extraction logs:
+> ```bash
+> python yt_history.py list --verbose --live-cookies
+> ```
+
 ### Search history
 
 ```bash
-# Search in last 50 items (default)
+# Search in last 50 items (default, saved cookies)
 python yt_history.py search "cooking"
 
 # Search in last 500 items
@@ -164,6 +178,9 @@ python yt_history.py search "cooking" --limit 500
 
 # Search in all history
 python yt_history.py search "cooking" --limit 0
+
+# Search with live cookies
+python yt_history.py search "cooking" --limit 0 --live-cookies
 ```
 
 **What it does:**
@@ -175,10 +192,10 @@ python yt_history.py search "cooking" --limit 0
 **Output:**
 
 ```
-🔎 Searching 'cooking' in history...
-   Analyzing... 50 items
-
 ✅ 1 result(s) found
+
+🎬 VIDEOS
+────────────────────────────────────────────────────────────────────────────────
 
 1. 🎬 Easy Pasta Recipe Tutorial
    📺 Cooking Channel
@@ -189,7 +206,7 @@ python yt_history.py search "cooking" --limit 0
 ### Export history
 
 ```bash
-# Export last 50 items (default)
+# Export last 50 items (default, saved cookies)
 python yt_history.py export
 
 # Export last 1000 items
@@ -197,6 +214,9 @@ python yt_history.py export --limit 1000
 
 # Export all history
 python yt_history.py export --limit 0
+
+# Export with live cookies (always fresh)
+python yt_history.py export --limit 0 --live-cookies
 
 # Custom output file
 python yt_history.py export --output my_history.json --limit 0
@@ -235,12 +255,24 @@ python yt_history.py export --output my_history.json --limit 0
 python yt_history.py refresh-cookies
 ```
 
-### Help
+### Help & Verbose Mode
 
 ```bash
 # Show all available commands
 python yt_history.py --help
+
+# Enable verbose output (shows progress and debug info)
+python yt_history.py list --verbose
+python yt_history.py list --verbose --live-cookies
+
+# Short form
+python yt_history.py list -v
 ```
+
+**Verbose mode shows:**
+- Cookie extraction progress
+- Loading progress with item count
+- Debug logs from HTTP requests
 
 ---
 
@@ -268,14 +300,76 @@ yt-setup/
 3. **Complete history** - Fetches videos, shorts, and music
 4. **Automatic pagination** - Iterates through all continuation tokens
 
-### Why not OAuth?
+### Why Browser Cookies Instead of OAuth?
 
-OAuth **doesn't work** with YouTube's history endpoints.
+**OAuth authentication is broken for YouTube history access** and has been since August 2024.
 
-I tested:
+#### Technical Investigation
 
-- OAuth + browse endpoint → HTTP 400
-- Browser cookies → Works perfectly
+We extensively tested OAuth with multiple approaches:
+
+- **YouTube History API** (`browseId: FEhistory`) → HTTP 400
+- **YouTube Music History** (`browseId: FEmusic_history`) → HTTP 400
+- **Different clients** (WEB, WEB_REMIX, ANDROID, TV) → All failed
+
+#### Why OAuth Doesn't Work
+
+Google intentionally broke OAuth for YouTube/YouTube Music authenticated endpoints in 2024-2025:
+
+- **ytmusicapi**: OAuth returns HTTP 400 for all authenticated endpoints since August 2025 ([issue #813](https://github.com/sigma67/ytmusicapi/issues/813))
+- **YouTube.js**: OAuth only works with TV client, [documented as "no longer recommended"](https://ytjs.dev/guide/authentication)
+- **Official stance**: "Due to recent changes by Google, OAuth2 sign-in only works when using the TV client. This method is no longer recommended - please use cookies instead."
+
+Attempted workarounds (all failed):
+
+- Switch to `IOS_MUSIC` client ([PR #815](https://github.com/sigma67/ytmusicapi/pull/815)) - incompatible response format
+- Custom OAuth clients - rejected server-side with "invalid argument"
+
+#### Cookie-Based Authentication
+
+Browser cookies are currently **the only working method** for accessing YouTube history.
+
+**How it works:**
+
+- Extracts authentication cookies from your browser (Chrome, Firefox, Safari, etc.)
+- Uses Google's SAPISIDHASH authentication (same as browser)
+- Cookies contain session tokens: `SAPISID`, `SIDCC`, `PSIDTS`, etc.
+
+**Limitation - Cookie Expiration:**
+
+Google intentionally expires cookies used outside the browser:
+
+- **In browser**: Cookies last weeks/months
+- **Saved to file**: Cookies expire in 3-5 days ([yt-dlp issue #13964](https://github.com/yt-dlp/yt-dlp/issues/13964))
+- **Reason**: Bot detection - Google detects "anomalous usage patterns"
+
+Timeline:
+
+- **2024**: Cookies lasted ~1 month when saved to file
+- **2026**: Cookies expire in 3-5 days (anti-bot detection strengthened)
+
+**Two modes available:**
+
+1. **Saved cookies** (default): Extract once, use until expiration (3-5 days)
+
+   ```bash
+   python extract_cookies.py
+   python yt_history.py list
+   ```
+
+2. **Live extraction** (`--live-cookies`): Extract fresh cookies on every command
+   ```bash
+   python yt_history.py list --live-cookies
+   ```
+
+Live extraction requires browser running locally but provides always-fresh cookies.
+
+#### References
+
+- ytmusicapi OAuth broken: https://github.com/sigma67/ytmusicapi/issues/813
+- YouTube.js auth guide: https://ytjs.dev/guide/authentication
+- yt-dlp cookie expiration: https://github.com/yt-dlp/yt-dlp/issues/13964
+- Cookie-based auth explanation: https://stackoverflow.com/a/32065323/5726546
 
 ---
 
