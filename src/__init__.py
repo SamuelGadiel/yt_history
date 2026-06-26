@@ -4,7 +4,15 @@ from .youtube_client import YouTubeClient
 from .history_parser import HistoryParser, HistoryItem
 from .history_fetcher import HistoryFetcher
 from .models import HistoryGroup
-from .auth import load_cookies, load_cookies_from_file, get_live_cookies
+from .auth import (
+    load_cookies,
+    load_cookies_from_file,
+    get_live_cookies,
+    detect_available_browsers,
+    extract_from_first_available,
+    save_cookies_to_file,
+    test_authentication
+)
 from .config import AppConfig, load_env_config
 from .exceptions import (
     YouTubeHistoryError,
@@ -26,6 +34,10 @@ __all__ = [
     'load_cookies',
     'load_cookies_from_file',
     'get_live_cookies',
+    'detect_available_browsers',
+    'extract_from_first_available',
+    'save_cookies_to_file',
+    'test_authentication',
     # Config
     'AppConfig',
     'load_env_config',

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Tuple
 from argparse import Namespace
 
 from .exceptions import AuthenticationError, CookieExtractionError
@@ -173,9 +173,142 @@ def extract_cookies_from_browser(
         raise CookieExtractionError(f"Failed to extract cookies from {browser_name}: {e}")
 
 
+def detect_available_browsers(verbose: bool = True) -> List[str]:
+    """
+    Detect which browsers are available on the system.
+
+    Args:
+        verbose: Print detection progress (default: True)
+
+    Returns:
+        List of available browser names
+
+    Raises:
+        ImportError: If browser_cookie3 not installed
+    """
+    import browser_cookie3
+
+    if verbose:
+        print("\n🔍 Detecting browsers...")
+
+    browsers = ['firefox', 'chrome', 'safari', 'edge', 'brave']
+    available = []
+
+    for browser in browsers:
+        try:
+            func = getattr(browser_cookie3, browser)
+            # Quick test to see if browser is accessible
+            func(domain_name='google.com')
+            available.append(browser)
+            if verbose:
+                print(f"   ✓ {browser.title()}")
+        except Exception:
+            if verbose:
+                print(f"   ✗ {browser.title()}")
+
+    return available
+
+
+def extract_from_first_available(browsers: List[str], verbose: bool = True) -> Tuple[str, Dict[str, str]]:
+    """
+    Extract cookies from first available browser.
+
+    Args:
+        browsers: List of browser names to try
+        verbose: Print extraction progress (default: True)
+
+    Returns:
+        Tuple of (cookie_string, cookies_dict)
+
+    Raises:
+        CookieExtractionError: If extraction fails from all browsers
+    """
+    for browser in browsers:
+        try:
+            return extract_cookies_from_browser(browser, verbose=verbose)
+        except Exception:
+            continue
+
+    raise CookieExtractionError("Failed to extract cookies from all available browsers")
+
+
+def save_cookies_to_file(cookie_string: str, filepath: str = 'browser_auth.json', verbose: bool = True) -> str:
+    """
+    Save cookies to JSON file.
+
+    Args:
+        cookie_string: Cookie string to save
+        filepath: Output file path (default: browser_auth.json)
+        verbose: Print save progress (default: True)
+
+    Returns:
+        Absolute path to saved file
+
+    Raises:
+        IOError: If file cannot be written
+    """
+    if verbose:
+        print(f"\n💾 Saving cookies...")
+
+    auth_data = {"cookie": cookie_string}
+
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(auth_data, f, indent=2)
+    except IOError as e:
+        raise IOError(f"Failed to save cookies to {filepath}: {e}")
+
+    abs_path = Path(filepath).absolute()
+
+    if verbose:
+        print(f"   ✓ Saved: {abs_path}")
+
+    return str(abs_path)
+
+
+def test_authentication(auth_file: str, verbose: bool = True) -> bool:
+    """
+    Test extracted cookies by fetching history.
+
+    Args:
+        auth_file: Path to auth file to test
+        verbose: Print test progress (default: True)
+
+    Returns:
+        True if authentication works, False otherwise
+    """
+    if verbose:
+        print(f"\n🧪 Testing authentication...")
+
+    try:
+        from .youtube_client import YouTubeClient
+        from .history_parser import HistoryParser
+
+        cookies = load_cookies_from_file(auth_file)
+        client = YouTubeClient(cookies)
+        response = client.get_history()
+        items = HistoryParser.parse_response(response)
+
+        if verbose:
+            print(f"   ✓ Success! {len(items)} items in history")
+            if items:
+                print(f"\n   📹 First: {items[0].title}")
+
+        return True
+
+    except Exception as e:
+        if verbose:
+            print(f"   ✗ Failed: {e}")
+        return False
+
+
 __all__ = [
     'load_cookies',
     'load_cookies_from_file',
     'get_live_cookies',
-    'extract_cookies_from_browser'
+    'extract_cookies_from_browser',
+    'detect_available_browsers',
+    'extract_from_first_available',
+    'save_cookies_to_file',
+    'test_authentication',
 ]
