@@ -23,26 +23,48 @@ from src.youtube_client import YouTubeClient, load_cookies_from_file
 from src.history_fetcher import HistoryFetcher
 
 
+def load_cookies(args):
+    """Load cookies from file or live extraction based on args.
+
+    Args:
+        args: Parsed command-line arguments with 'live_cookies' and 'auth' attributes
+
+    Returns:
+        dict: Cookie dictionary
+    """
+    if args.live_cookies:
+        from extract_cookies import get_live_cookies
+        # Only show verbose output if --verbose flag is set
+        verbose = getattr(args, 'verbose', False) and not getattr(args, 'json', False)
+        return get_live_cookies(verbose=verbose)
+    else:
+        return load_cookies_from_file(args.auth)
+
+
 def cmd_list(args):
     """Command: list - Display history items."""
-    if not args.json:
+    verbose = getattr(args, 'verbose', False)
+
+    if not args.json and verbose:
         print("🔍 Fetching YouTube history...")
 
     # Load cookies
-    cookies = load_cookies_from_file(args.auth)
+    cookies = load_cookies(args)
     client = YouTubeClient(cookies)
     fetcher = HistoryFetcher(client)
 
     # Progress callback
+    limit = None if args.limit == 0 else args.limit
+
     def progress(total):
-        if not args.json:
-            print(f"\r   Loading... {total} items", end="", flush=True)
+        if not args.json and verbose:
+            max_display = limit if limit else total
+            print(f"\r   Loading... {min(total, max_display)} items", end="", flush=True)
 
     # Fetch items grouped
-    limit = None if args.limit == 0 else args.limit
     grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
 
-    if not args.json:
+    if not args.json and verbose:
         print()  # New line after progress
 
     # Filter by type
@@ -90,8 +112,6 @@ def cmd_list(args):
     # Always display grouped by type
     _display_items_grouped(shorts, videos)
 
-    print("\n" + "=" * 80)
-
 
 def _display_items_grouped(shorts, videos):
     """Display items grouped by type."""
@@ -126,21 +146,29 @@ def _display_items_grouped(shorts, videos):
 
 def cmd_export(args):
     """Command: export - Export history to file."""
-    print("📦 Exporting YouTube history...")
+    verbose = getattr(args, 'verbose', False)
+
+    if verbose:
+        print("📦 Exporting YouTube history...")
 
     # Load cookies
-    cookies = load_cookies_from_file(args.auth)
+    cookies = load_cookies(args)
     client = YouTubeClient(cookies)
     fetcher = HistoryFetcher(client)
 
     # Progress callback
+    limit = None if args.limit == 0 else args.limit
+
     def progress(total):
-        print(f"\r   Fetching... {total} items", end="", flush=True)
+        if verbose:
+            max_display = limit if limit else total
+            print(f"\r   Fetching... {min(total, max_display)} items", end="", flush=True)
 
     # Fetch items grouped
-    limit = None if args.limit == 0 else args.limit
     grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
-    print()  # New line
+
+    if verbose:
+        print()  # New line
 
     if grouped["total_items"] == 0:
         print("❌ No items found.")
@@ -187,21 +215,29 @@ def cmd_export(args):
 
 def cmd_search(args):
     """Command: search - Search term in history."""
-    print(f"🔎 Searching '{args.query}' in history...")
+    verbose = getattr(args, 'verbose', False)
+
+    if verbose:
+        print(f"🔎 Searching '{args.query}' in history...")
 
     # Load cookies
-    cookies = load_cookies_from_file(args.auth)
+    cookies = load_cookies(args)
     client = YouTubeClient(cookies)
     fetcher = HistoryFetcher(client)
 
     # Progress callback
+    limit = None if args.limit == 0 else args.limit
+
     def progress(total):
-        print(f"\r   Analyzing... {total} items", end="", flush=True)
+        if verbose:
+            max_display = limit if limit else total
+            print(f"\r   Analyzing... {min(total, max_display)} items", end="", flush=True)
 
     # Fetch items grouped
-    limit = None if args.limit == 0 else args.limit
     grouped = fetcher.fetch_all_grouped(limit=limit, progress_callback=progress)
-    print()
+
+    if verbose:
+        print()
 
     if grouped["total_items"] == 0:
         print("❌ History is empty.")
@@ -297,6 +333,11 @@ def main():
         help="authentication file (default: browser_auth.json)"
     )
     parent_parser.add_argument(
+        "--live-cookies",
+        action="store_true",
+        help="extract fresh cookies from browser on every command (ignores --auth)"
+    )
+    parent_parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -310,6 +351,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s list                                    # List last 50 items (grouped by type)
+  %(prog)s list --live-cookies                     # List with fresh cookies from browser
   %(prog)s --verbose list --limit 200              # List last 200 items with debug
   %(prog)s list --type shorts --verbose            # List only shorts with debug
   %(prog)s search "cooking"                        # Search in last 50 items
@@ -318,6 +360,7 @@ Examples:
   %(prog)s search "music" --type shorts --limit 0  # Search shorts in all history
   %(prog)s export                                  # Export last 50 items
   %(prog)s export --limit 0                        # Export all history
+  %(prog)s export --limit 0 --live-cookies         # Export all with fresh cookies
   %(prog)s export --type videos --limit 0          # Export only videos
   %(prog)s export --output my.json                 # Export to custom file
   %(prog)s refresh-cookies                         # Refresh authentication cookies
@@ -424,14 +467,16 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Check if auth file exists (except for refresh-cookies)
-    if args.command != "refresh-cookies":
+    # Check if auth file exists (except for refresh-cookies and --live-cookies)
+    if args.command != "refresh-cookies" and not args.live_cookies:
         if not Path(args.auth).exists():
             print(f"❌ Authentication file not found: {args.auth}")
             print("\nRun first:")
             print("  python extract_cookies.py")
             print("\nOr:")
             print("  python yt_history.py refresh-cookies")
+            print("\nOr use live mode:")
+            print("  python yt_history.py list --live-cookies")
             sys.exit(1)
 
     # Execute command

@@ -19,9 +19,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.youtube_client import YouTubeClient
 
 
-def extract_cookies_from_browser(browser_name='chrome'):
-    """Extract YouTube cookies from browser."""
-    print(f"📡 Extracting cookies from {browser_name.title()}...")
+def extract_cookies_from_browser(browser_name='chrome', verbose=True):
+    """Extract YouTube cookies from browser.
+
+    Args:
+        browser_name: Browser to extract from
+        verbose: Print extraction progress (default: True)
+
+    Returns:
+        tuple: (cookie_string, cookies_dict)
+    """
+    if verbose:
+        print(f"📡 Extracting cookies from {browser_name.title()}...")
 
     browser_functions = {
         'chrome': browser_cookie3.chrome,
@@ -44,20 +53,47 @@ def extract_cookies_from_browser(browser_name='chrome'):
         if not cookies:
             raise Exception("No cookies found. Are you logged in to YouTube?")
 
-        print(f"   ✓ {len(cookies)} cookies extracted")
+        if verbose:
+            print(f"   ✓ {len(cookies)} cookies extracted")
 
-        critical = ['__Secure-3PAPISID', 'SAPISID', 'HSID', 'SSID', 'SID']
-        found = [n for n in critical if n in cookies]
+            critical = ['__Secure-3PAPISID', 'SAPISID', 'HSID', 'SSID', 'SID']
+            found = [n for n in critical if n in cookies]
 
-        if found:
-            print(f"   ✓ Critical cookies: {', '.join(found)}")
+            if found:
+                print(f"   ✓ Critical cookies: {', '.join(found)}")
 
         cookie_string = '; '.join([f"{name}={value}" for name, value in cookies.items()])
         return cookie_string, cookies
 
     except Exception as e:
-        print(f"   ✗ Error: {e}")
+        if verbose:
+            print(f"   ✗ Error: {e}")
         raise
+
+
+def get_live_cookies(verbose=True):
+    """Extract fresh cookies from browser without saving to file.
+
+    Args:
+        verbose: Print extraction progress (default: True)
+
+    Returns:
+        dict: Cookie dictionary ready for YouTubeClient
+    """
+    if verbose:
+        print("🔴 Live mode: Extracting fresh cookies from browser...")
+
+    # Detect available browsers
+    browsers = ['firefox', 'chrome', 'safari', 'edge', 'brave']
+
+    for browser in browsers:
+        try:
+            _, cookies = extract_cookies_from_browser(browser, verbose=verbose)
+            return cookies
+        except:
+            continue
+
+    raise Exception("No browser available for live cookie extraction")
 
 
 def save_cookies(cookie_string, filepath='browser_auth.json'):
