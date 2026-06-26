@@ -2,18 +2,21 @@
 History fetcher with pagination support.
 """
 
-from typing import List, Optional, Callable, Dict, Any
+from typing import List, Optional, Callable
 import time
 
 from .youtube_client import YouTubeClient
 from .history_parser import HistoryParser, HistoryItem
+from .models import HistoryGroup
 
 
 class HistoryFetcher:
     """Fetch history with pagination support."""
 
-    def __init__(self, client: YouTubeClient):
+    def __init__(self, client: YouTubeClient) -> None:
         """
+        Initialize history fetcher.
+
         Args:
             client: Configured YouTube client
         """
@@ -92,7 +95,7 @@ class HistoryFetcher:
         self,
         limit: Optional[int] = None,
         progress_callback: Optional[Callable[[int], None]] = None
-    ) -> Dict[str, Any]:
+    ) -> HistoryGroup:
         """
         Fetch all history grouped by type.
 
@@ -101,13 +104,7 @@ class HistoryFetcher:
             progress_callback: Function called on each page (receives total items)
 
         Returns:
-            Dict with structure:
-            {
-                "total_items": int,
-                "statistics": {"video": int, "short": int},
-                "videos": [HistoryItem],
-                "shorts": [HistoryItem]
-            }
+            HistoryGroup with videos and shorts separated
         """
         all_items = self.fetch_all(limit=limit, progress_callback=progress_callback)
 
@@ -120,9 +117,12 @@ class HistoryFetcher:
         for item in all_items:
             stats[item.item_type] = stats.get(item.item_type, 0) + 1
 
-        return {
-            "total_items": len(all_items),
-            "statistics": stats,
-            "videos": videos,
-            "shorts": shorts
-        }
+        return HistoryGroup(
+            total_items=len(all_items),
+            statistics=stats,
+            videos=videos,
+            shorts=shorts
+        )
+
+
+__all__ = ['HistoryFetcher']
