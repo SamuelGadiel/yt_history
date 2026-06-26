@@ -167,22 +167,72 @@ def cmd_search(args: argparse.Namespace) -> None:
     print("\n" + "=" * 80)
 
 
-def cmd_refresh_cookies(args: argparse.Namespace) -> None:
-    """Command: refresh-cookies - Extract fresh cookies from browser."""
-    import subprocess
-
-    print("🍪 Extracting cookies from browser...")
-
-    result = subprocess.run(
-        [sys.executable, "extract_cookies.py"],
-        capture_output=False
-    )
-
-    if result.returncode == 0:
-        print("\n✅ Cookies refreshed!")
-    else:
-        print("\n❌ Failed to extract cookies")
+def cmd_extract_cookies(args: argparse.Namespace) -> None:
+    """Command: extract-cookies - Extract fresh cookies from browser."""
+    try:
+        import browser_cookie3
+    except ImportError:
+        print("❌ Error: 'browser-cookie3' library not installed")
+        print("\nInstall with: pip install browser-cookie3")
         sys.exit(1)
+
+    from src.auth import (
+        detect_available_browsers,
+        extract_from_first_available,
+        save_cookies_to_file,
+        test_authentication
+    )
+    from src.exceptions import CookieExtractionError
+
+    print("=" * 60)
+    print("AUTOMATIC COOKIE EXTRACTION")
+    print("=" * 60)
+
+    # Detect browsers
+    available = detect_available_browsers(verbose=True)
+
+    if not available:
+        print("\n❌ No browsers found!")
+        print("\nTips:")
+        print("1. Log in to YouTube in your browser")
+        print("2. Chrome 127+ has issues - use Firefox")
+        print("3. macOS: allow Keychain access")
+        sys.exit(1)
+
+    browser = available[0]
+    print(f"\n✓ Using {browser.title()}")
+
+    # Extract cookies
+    print(f"\n{'=' * 60}")
+    try:
+        cookie_string, cookies = extract_from_first_available(available, verbose=True)
+    except CookieExtractionError as e:
+        print(f"\n❌ Failed: {e}")
+        if browser == 'chrome':
+            print("\n💡 Chrome 127+ blocked cookies.")
+            print("   Try Firefox or manual method.")
+        sys.exit(1)
+
+    # Save cookies
+    output_file = args.output if hasattr(args, 'output') else 'browser_auth.json'
+    try:
+        auth_file = save_cookies_to_file(cookie_string, output_file, verbose=True)
+    except IOError as e:
+        print(f"\n❌ Error saving cookies: {e}")
+        sys.exit(1)
+
+    # Test authentication
+    success = test_authentication(auth_file, verbose=True)
+
+    # Final message
+    print(f"\n{'=' * 60}")
+    if success:
+        print("✅ SUCCESS!")
+        print(f"\nUse with:")
+        print(f"  python yt_history.py list")
+    else:
+        print("⚠️  Cookies extracted but test failed.")
+    print("=" * 60)
 
 
 def _print_summary(grouped: HistoryGroup, type_filter: str) -> None:
@@ -297,7 +347,8 @@ Examples:
   %(prog)s export --limit 0 --live-cookies         # Export all with fresh cookies
   %(prog)s export --type videos --limit 0          # Export only videos
   %(prog)s export --output my.json                 # Export to custom file
-  %(prog)s refresh-cookies                         # Refresh authentication cookies
+  %(prog)s extract-cookies                         # Extract cookies from browser (first-time setup)
+  %(prog)s extract-cookies --output custom.json    # Save to custom file
         """
     )
 
@@ -305,7 +356,7 @@ Examples:
         dest="command",
         title="commands",
         description="available commands",
-        metavar="{list,export,search,refresh-cookies}"
+        metavar="{list,export,search,extract-cookies}"
     )
 
     # Command: list
@@ -387,12 +438,17 @@ Examples:
         help="filter by item type (default: all)"
     )
 
-    # Command: refresh-cookies
-    refresh_parser = subparsers.add_parser(
-        "refresh-cookies",
-        help="refresh browser cookies",
-        description="Extract fresh cookies from browser for authentication.",
-        parents=[parent_parser]
+    # Command: extract-cookies
+    extract_parser = subparsers.add_parser(
+        "extract-cookies",
+        help="extract cookies from browser",
+        description="Extract YouTube cookies from browser for authentication (first-time setup)."
+    )
+    extract_parser.add_argument(
+        "--output",
+        default="browser_auth.json",
+        metavar="FILE",
+        help="output file path (default: browser_auth.json)"
     )
 
     return parser
@@ -406,17 +462,15 @@ def check_auth_file(args: argparse.Namespace) -> None:
         args: Parsed arguments
 
     Raises:
-        SystemExit: If auth file not found (unless using live cookies or refresh command)
+        SystemExit: If auth file not found (unless using live cookies or extract-cookies command)
     """
-    if args.command == "refresh-cookies" or args.live_cookies:
+    if args.command == "extract-cookies" or args.live_cookies:
         return
 
     if not Path(args.auth).exists():
         print(f"❌ Authentication file not found: {args.auth}")
         print("\nRun first:")
-        print("  python extract_cookies.py")
-        print("\nOr:")
-        print("  python yt_history.py refresh-cookies")
+        print("  python yt_history.py extract-cookies")
         print("\nOr use live mode:")
         print("  python yt_history.py list --live-cookies")
         sys.exit(1)
@@ -447,8 +501,8 @@ def main() -> NoReturn:
             cmd_export(args)
         elif args.command == "search":
             cmd_search(args)
-        elif args.command == "refresh-cookies":
-            cmd_refresh_cookies(args)
+        elif args.command == "extract-cookies":
+            cmd_extract_cookies(args)
 
         sys.exit(0)
 
@@ -459,7 +513,7 @@ def main() -> NoReturn:
     except AuthenticationError as e:
         print(f"\n❌ Error: {e}")
         print("\nRun first:")
-        print("  python extract_cookies.py")
+        print("  python yt_history.py extract-cookies")
         sys.exit(1)
 
     except YouTubeHistoryError as e:
